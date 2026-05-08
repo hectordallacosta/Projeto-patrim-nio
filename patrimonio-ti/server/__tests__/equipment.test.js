@@ -96,7 +96,7 @@ describe('POST /api/equipment', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ equipmentModel: equipmentModelId, serialNumber: 'SN-DUP' });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
     expect(res.body.code).toBe('SERIAL_NUMBER_DUPLICATE');
   });
 

@@ -82,7 +82,7 @@ const me = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-__v')
-      .populate('sector', 'name type');
+      .populate('sector', 'name');
 
     if (!user) {
       return error(res, 'Usuário não encontrado', 404, 'NOT_FOUND');

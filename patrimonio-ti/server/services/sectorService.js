@@ -103,7 +103,7 @@ async function remove(id, userId, ip) {
 
   const [users, equipments] = await Promise.all([
     User.find({ sector: id }).select('displayName username').lean(),
-    Equipment.find({ assignedSector: id }).select('brand model serialNumber').lean(),
+    Equipment.find({ assignedSector: id }).select('serialNumber patrimonyNumber').populate({ path: 'equipmentModel', select: 'brand model' }).lean(),
   ]);
 
   if (users.length || equipments.length) {
