@@ -134,7 +134,7 @@ async function searchUsers(query) {
 
     // Escapa caracteres especiais do LDAP na query
     const safe = query.trim().replace(/[*()\\\x00]/g, '');
-    const filter = `(|(sAMAccountName=*${safe}*)(displayName=*${safe}*)(mail=*${safe}*))`;
+    const filter = `(&(objectClass=person)(!(objectClass=computer))(!(sAMAccountName=*$))(|(sAMAccountName=*${safe}*)(displayName=*${safe}*)(mail=*${safe}*)))`;
 
     const { searchEntries } = await client.search(ldapConfig.userSearchBase, {
       scope: 'sub',
@@ -171,7 +171,7 @@ async function getUsersByOU(ouPath) {
 
     const { searchEntries } = await client.search(ouPath.trim(), {
       scope: 'sub',
-      filter: '(&(objectClass=user)(sAMAccountName=*))',
+      filter: '(&(objectClass=person)(!(objectClass=computer))(!(sAMAccountName=*$))(sAMAccountName=*))',
       attributes: ['displayName', 'mail', 'department', 'sAMAccountName'],
     });
 

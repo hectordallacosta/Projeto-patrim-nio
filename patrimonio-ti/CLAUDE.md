@@ -203,7 +203,8 @@ action, entity, entityId, performedBy->User, before{}, after{}, ip
 8. **serialNumber:** único quando informado (índice sparse — múltiplos equipamentos podem ter serialNumber nulo)
 9. **patrimonyNumber:** obrigatório e único — identifica fisicamente o bem (plaqueta)
 10. **Deletar EquipmentModel:** bloqueado se houver Equipment vinculado — retorna `EQUIPMENT_MODEL_IN_USE`
-11. **Atribuição restrita a usuários ativos:** `equipmentService.assign` rejeita usuários com `isActive: false`
+11. **EquipmentModel:** combinação `brand + model + type` deve ser única no sistema (índice composto, case-insensitive). Retorna `EQUIPMENT_MODEL_DUPLICATE` (409) em caso de duplicata.
+12. **Atribuição restrita a usuários ativos:** `equipmentService.assign` rejeita usuários com `isActive: false`
 12. **Toda operação destrutiva** (delete, desvincular) → registrar no AuditLog
 
 ---
@@ -223,7 +224,7 @@ action, entity, entityId, performedBy->User, before{}, after{}, ip
 
 ### Códigos de Erro
 ```
-EQUIPMENT_TYPE_IN_USE | EQUIPMENT_MODEL_IN_USE | SECTOR_HAS_DEPENDENCIES
+EQUIPMENT_TYPE_IN_USE | EQUIPMENT_MODEL_IN_USE | EQUIPMENT_MODEL_DUPLICATE | SECTOR_HAS_DEPENDENCIES
 SERIAL_NUMBER_DUPLICATE | PATRIMONY_NUMBER_DUPLICATE | EQUIPMENT_UNAVAILABLE
 LDAP_AUTH_FAILED | LDAP_UNAVAILABLE | USER_NOT_FOUND_AD | USER_INACTIVE | VALIDATION_ERROR
 ```
@@ -327,44 +328,9 @@ LDAP_DOMAIN=empresa.com.br
 - [x] **Fase 12** — UX: busca global, filtros avançados, URL params, cards de resumo, toasts
 - [x] **Fase 13** — EquipmentModel (POO: modelo como template, equipment como instância) + importação AD em lote
 - [x] **Fase 14** — Refinamentos de negócio: filtros por feature, patrimônio obrigatório/único, série opcional, atribuição restrita a usuários ativos
+- [x] **Fase 15** — Melhorias de UX/robustez: filtro LDAP só usuários, toast erro com timeout 6s, remoção purchaseDate, fix D-1 garantia, unicidade EquipmentModel, busca reativa de usuários no AssignForm, fechar modal ao clicar fora
 
 ---
-
-## Bugs Conhecidos Pendentes de Correção
-
-> Identificados em revisão de código de 2026-05-06. Ainda não corrigidos.
-
-| Arquivo | Linha | Problema | Impacto |
-|---------|-------|---------|---------|
-| `server/controllers/authController.js` | 86 | `.populate('sector', 'name type')` — `type` não existe mais em `Sector` (SectorType removido) | Baixo: Mongoose ignora campo ausente, mas o select é desnecessário |
-| `server/services/sectorService.js` | 106 | `Equipment.find(...).select('brand model serialNumber')` — `brand` e `model` não existem mais diretamente em `Equipment` (foram para `EquipmentModel`) | Médio: mensagem de erro ao bloquear deleção de setor não mostra marca/modelo, só serialNumber |
-| `server/__tests__/equipment.test.js` | 99 | `expect(res.status).toBe(500)` para serial duplicado, mas `errorHandler` retorna **409** (correto) | Alto: teste quebrando — deve ser `expect(res.status).toBe(409)` |
-
-### Como corrigir
-
-**Bug 1 — `authController.js:86`:**
-```js
-// trocar:
-.populate('sector', 'name type')
-// por:
-.populate('sector', 'name')
-```
-
-**Bug 2 — `sectorService.js:106`:**
-```js
-// trocar:
-Equipment.find({ assignedSector: id }).select('brand model serialNumber').lean()
-// por:
-Equipment.find({ assignedSector: id }).select('serialNumber patrimonyNumber').populate({ path: 'equipmentModel', select: 'brand model' }).lean()
-```
-
-**Bug 3 — `equipment.test.js:99`:**
-```js
-// trocar:
-expect(res.status).toBe(500)
-// por:
-expect(res.status).toBe(409)
-```
 
 ---
 
@@ -413,6 +379,10 @@ expect(res.status).toBe(409)
 - Aceita formato `YYYY-MM-DD` (enviado pelo `<input type="date">`) em vez de ISO datetime
 - Aplicado em EquipmentModel (warrantyExpiry, purchaseDate)
 
+### Datas — timezone UTC
+- Datas do tipo `YYYY-MM-DD` são convertidas para `Date` com horário `T12:00:00.000Z` no `z.preprocess` do Zod (evita o problema D-1 causado pela conversão UTC → fuso local no front-end)
+- A função `formatDate` em `formatters.js` usa `{ timeZone: 'UTC' }` na exibição
+
 ### Filtros via URL (useUrlFilters)
 - Hook `useUrlFilters` gerencia query params da URL como fonte de verdade dos filtros
 - Estado sobrevive a F5 e permite compartilhar links filtrados
@@ -453,7 +423,7 @@ expect(res.status).toBe(409)
 
 ### Toasts
 - `toast.success/error/warning/info` disponível em qualquer lugar via `useToastStore.getState()`
-- Erros (`toast.error`) não têm auto-dismiss — o usuário precisa fechar manualmente
+- Erros (`toast.error`) têm auto-dismiss de **6 segundos** (antes: sem auto-dismiss). O usuário ainda pode fechar manualmente antes disso.
 - Máximo 3 toasts empilhados (os mais antigos são descartados)
 - Posição: topo-direito
 

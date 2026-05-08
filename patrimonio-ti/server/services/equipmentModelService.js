@@ -54,6 +54,14 @@ async function getById(id) {
 }
 
 async function create(data, userId, ip) {
+  const exists = await EquipmentModel.findOne({ brand: data.brand, model: data.model, type: data.type });
+  if (exists) {
+    const err = new Error('Já existe um modelo com esta combinação de marca, modelo e tipo.');
+    err.statusCode = 409;
+    err.code = 'EQUIPMENT_MODEL_DUPLICATE';
+    throw err;
+  }
+
   const m = await EquipmentModel.create(data);
   await auditService.log({
     action: 'CREATE',
@@ -72,6 +80,19 @@ async function update(id, data, userId, ip) {
     const err = new Error('Modelo de equipamento não encontrado');
     err.statusCode = 404;
     throw err;
+  }
+
+  if (data.brand || data.model || data.type) {
+    const brand = data.brand ?? before.brand;
+    const model = data.model ?? before.model;
+    const type  = data.type  ?? before.type;
+    const exists = await EquipmentModel.findOne({ brand, model, type, _id: { $ne: id } });
+    if (exists) {
+      const err = new Error('Já existe um modelo com esta combinação de marca, modelo e tipo.');
+      err.statusCode = 409;
+      err.code = 'EQUIPMENT_MODEL_DUPLICATE';
+      throw err;
+    }
   }
 
   const updated = await EquipmentModel.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate(POPULATE);

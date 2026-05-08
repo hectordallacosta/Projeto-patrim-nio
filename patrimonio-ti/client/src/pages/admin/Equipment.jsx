@@ -16,7 +16,7 @@ import {
 } from '@/services/equipmentService';
 import { listAllEquipmentModels } from '@/services/equipmentModelService';
 import { listEquipmentTypes } from '@/services/equipmentTypeService';
-import { listActiveUsers } from '@/services/userService';
+import { listUsers } from '@/services/userService';
 import { listSectors } from '@/services/sectorService';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDate, statusLabel, statusColor } from '@/utils/formatters';
@@ -181,14 +181,44 @@ function EquipmentForm({ initial, equipmentModels, onSubmit, onCancel, loading }
 }
 
 // ---------- AssignForm ----------
-function AssignForm({ equipment, users, sectors, onSubmit, onCancel, loading }) {
+function AssignForm({ equipment, sectors, onSubmit, onCancel, loading }) {
   const isTransfer = equipment.assignedTo || equipment.assignedSector;
   const [target, setTarget] = useState('user');
   const [assignedTo, setAssignedTo] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
   const [assignedSector, setAssignedSector] = useState('');
   const [note, setNote] = useState('');
 
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const debouncedUserQuery = useDebounce(userQuery, 300);
+  const userRef = useRef(null);
+
+  useEffect(() => {
+    setLoadingUsers(true);
+    listUsers({ search: debouncedUserQuery || undefined, isActive: 'true', limit: 20 })
+      .then((r) => setUserResults(r.data || []))
+      .catch(() => setUserResults([]))
+      .finally(() => setLoadingUsers(false));
+  }, [debouncedUserQuery]);
+
+  useEffect(() => {
+    const handler = (e) => { if (!userRef.current?.contains(e.target)) setUserDropdownOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
+    setAssignedTo(user._id);
+    setUserQuery(`${user.displayName} (${user.username})`);
+    setUserDropdownOpen(false);
+  };
+
   const em = equipment.equipmentModel;
+  const selectedSector = sectors.find((s) => s._id === assignedSector);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -198,9 +228,6 @@ function AssignForm({ equipment, users, sectors, onSubmit, onCancel, loading }) 
       note,
     });
   };
-
-  const selectedUser = users.find((u) => u._id === assignedTo);
-  const selectedSector = sectors.find((s) => s._id === assignedSector);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -242,13 +269,37 @@ function AssignForm({ equipment, users, sectors, onSubmit, onCancel, loading }) 
       {target === 'user' ? (
         <div>
           <label className="label">Usuário *</label>
-          <Autocomplete
-            items={users}
-            value={assignedTo}
-            onChange={setAssignedTo}
-            getLabel={(u) => `${u.displayName} (${u.username})${u.sector?.name ? ' · ' + u.sector.name : ''}`}
-            placeholder="Digite para buscar usuário..."
-          />
+          <div ref={userRef} className="relative">
+            <input
+              className="input"
+              placeholder="Buscar usuário por nome ou login..."
+              value={userQuery}
+              onChange={(e) => { setUserQuery(e.target.value); setSelectedUser(null); setAssignedTo(''); setUserDropdownOpen(true); }}
+              onFocus={() => setUserDropdownOpen(true)}
+            />
+            {userDropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {loadingUsers ? (
+                  <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-gray-400" /></div>
+                ) : userResults.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-gray-400">Nenhum usuário encontrado.</p>
+                ) : (
+                  userResults.map((u) => (
+                    <button
+                      key={u._id}
+                      type="button"
+                      onClick={() => handleSelectUser(u)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 hover:text-primary-700"
+                    >
+                      <span className="font-medium">{u.displayName}</span>
+                      <span className="text-xs text-gray-400 ml-1">({u.username})</span>
+                      {u.sector?.name && <span className="text-xs text-gray-400 ml-1">· {u.sector.name}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div>
@@ -337,7 +388,6 @@ export default function Equipment() {
   const [loading, setLoading]   = useState(true);
   const [types, setTypes]       = useState([]);
   const [equipmentModels, setEquipmentModels] = useState([]);
-  const [users, setUsers]       = useState([]);
   const [sectors, setSectors]   = useState([]);
   const [modal, setModal]       = useState(null);
   const [confirm, setConfirm]   = useState(null);
@@ -422,7 +472,6 @@ export default function Equipment() {
   useEffect(() => {
     listEquipmentTypes().then(setTypes);
     listAllEquipmentModels().then(setEquipmentModels);
-    listActiveUsers().then((r) => setUsers(r.data));
     listSectors({ limit: 200 }).then((r) => setSectors(r.data));
   }, []);
 
@@ -717,7 +766,6 @@ export default function Equipment() {
         {modal?.mode === 'assign' && (
           <AssignForm
             equipment={modal.item}
-            users={users}
             sectors={sectors}
             onSubmit={handleAssign}
             onCancel={() => setModal(null)}

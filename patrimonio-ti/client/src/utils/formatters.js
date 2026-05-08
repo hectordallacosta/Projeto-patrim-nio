@@ -1,6 +1,6 @@
 export const formatDate = (date) => {
   if (!date) return '—';
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(date));
+  return new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 };
 
 export const formatDateTime = (date) => {

@@ -16,10 +16,9 @@ import { cn } from '@/utils/cn';
 function ModelForm({ initial, types, onSubmit, onCancel, loading }) {
   const [form, setForm] = useState({
     type: '', brand: '', model: '', lot: '',
-    purchaseDate: '', warrantyExpiry: '', notes: '', isActive: true,
+    warrantyExpiry: '', notes: '', isActive: true,
     ...initial,
     type: initial?.type?._id || initial?.type || '',
-    purchaseDate: initial?.purchaseDate ? initial.purchaseDate.slice(0, 10) : '',
     warrantyExpiry: initial?.warrantyExpiry ? initial.warrantyExpiry.slice(0, 10) : '',
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -45,10 +44,6 @@ function ModelForm({ initial, types, onSubmit, onCancel, loading }) {
         <div className="col-span-2">
           <label className="label">Lote / Processo</label>
           <input className="input" value={form.lot} onChange={(e) => set('lot', e.target.value)} placeholder="Ex: SEA 1212/2026" />
-        </div>
-        <div>
-          <label className="label">Data de Compra</label>
-          <input type="date" className="input" value={form.purchaseDate} onChange={(e) => set('purchaseDate', e.target.value)} />
         </div>
         <div>
           <label className="label">Garantia até</label>

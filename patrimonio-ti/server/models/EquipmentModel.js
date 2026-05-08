@@ -14,4 +14,9 @@ const equipmentModelSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+equipmentModelSchema.index(
+  { brand: 1, model: 1, type: 1 },
+  { unique: true, collation: { locale: 'pt', strength: 2 } }
+);
+
 module.exports = mongoose.model('EquipmentModel', equipmentModelSchema);

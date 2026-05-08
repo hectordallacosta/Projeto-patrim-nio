@@ -3,8 +3,12 @@ const equipmentModelService = require('../services/equipmentModelService');
 const { success, error } = require('../utils/apiResponse');
 
 const dateField = z.preprocess(
-  (v) => (v === '' ? null : v),
-  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida — use AAAA-MM-DD').nullable().optional()
+  (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(`${v}T12:00:00.000Z`);
+    return v;
+  },
+  z.date().nullable().optional()
 );
 
 const createSchema = z.object({
@@ -12,7 +16,6 @@ const createSchema = z.object({
   brand: z.string().min(1, 'Marca obrigatória').max(100),
   model: z.string().min(1, 'Modelo obrigatório').max(100),
   lot: z.preprocess((v) => (v === '' ? null : v), z.string().max(200).nullable().optional()),
-  purchaseDate: dateField,
   warrantyExpiry: dateField,
   notes: z.string().max(1000).optional(),
   isActive: z.boolean().optional(),
@@ -57,6 +60,7 @@ const create = async (req, res, next) => {
     const data = await equipmentModelService.create(parsed.data, req.user.id, req.ip);
     return success(res, data, 201);
   } catch (err) {
+    if (err.code === 'EQUIPMENT_MODEL_DUPLICATE') return error(res, err.message, 409, err.code);
     next(err);
   }
 };
@@ -71,6 +75,7 @@ const update = async (req, res, next) => {
     return success(res, data);
   } catch (err) {
     if (err.statusCode === 404) return error(res, err.message, 404, 'NOT_FOUND');
+    if (err.code === 'EQUIPMENT_MODEL_DUPLICATE') return error(res, err.message, 409, err.code);
     next(err);
   }
 };
