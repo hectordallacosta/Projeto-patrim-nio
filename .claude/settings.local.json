@@ -19,7 +19,11 @@
       "Bash(Remove-Item \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\server\\\\controllers\\\\searchController.js\" -Force)",
       "Bash(Remove-Item \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\server\\\\routes\\\\search.routes.js\" -Force)",
       "Bash(Write-Host \"Deletados com sucesso\")",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\" -Recurse -Filter \"MELHORIAS_3.md\")",
+      "Bash(Select-Object FullName)",
+      "Bash(git commit *)",
+      "Bash(git add *)"
     ]
   }
 }
