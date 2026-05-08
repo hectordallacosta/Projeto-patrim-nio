@@ -38,8 +38,6 @@ Permite gerenciar equipamentos, usuários e setores com controle de acesso por p
 ```
 patrimonio-ti/
 |-- CLAUDE.md
-|-- MELHORIAS.md
-|-- .env.example
 |-- server/
 |   |-- config/
 |   |   |-- db.js
@@ -72,7 +70,7 @@ patrimonio-ti/
 |   |   |-- equipmentType.routes.js
 |   |   `-- auditLog.routes.js
 |   |-- services/
-|   |   |-- ldapService.js               # inclui searchUsers(query) para importacao AD
+|   |   |-- ldapService.js               # searchUsers e getUsersByOU — filtra só objectClass=person
 |   |   |-- auditService.js
 |   |   |-- sectorService.js
 |   |   |-- equipmentService.js
@@ -105,7 +103,7 @@ patrimonio-ti/
     |   |       |-- ErrorBoundary.jsx    # captura erros de renderizacao React
     |   |       |-- PageTitle.jsx        # titulo de pagina + slot de acao (botao Novo)
     |   |       |-- Pagination.jsx
-    |   |       |-- Modal.jsx
+    |   |       |-- Modal.jsx              # fecha ao clicar no overlay (stopPropagation no conteúdo)
     |   |       |-- SearchBar.jsx        # barra de busca reutilizavel
     |   |       |-- StatusBadge.jsx
     |   |       |-- EmptyState.jsx       # aceita prop action=
@@ -115,7 +113,7 @@ patrimonio-ti/
     |   |   |-- auth/Login.jsx
     |   |   |-- admin/
     |   |   |   |-- Dashboard.jsx
-    |   |   |   |-- Equipment.jsx        # formulario usa equipmentModel (dropdown+autocomplete)
+    |   |   |   |-- Equipment.jsx        # AssignForm com busca reativa de usuários via API
     |   |   |   |-- EquipmentModels.jsx  # CRUD de modelos de equipamento
     |   |   |   |-- Users.jsx            # botao "Sincronizar com AD" + ADSyncModal
     |   |   |   |-- Sectors.jsx          # filtros + URL params + cards + contagens
@@ -168,9 +166,11 @@ name(unico), description, manager->User, isActive
 ### EquipmentModel
 ```
 type->EquipmentType, brand(obrigatorio), model(obrigatorio), lot,
-purchaseDate, warrantyExpiry, notes, isActive
+warrantyExpiry, notes, isActive
 ```
 > Template/classe do equipamento. Atualizações aqui refletem em todos os equipamentos vinculados.
+> Combinação `brand + model + type` é única (índice composto, case-insensitive).
+> Campo `purchaseDate` existe no schema Mongoose mas não é mais exposto no formulário (preservado para dados históricos).
 
 ### Equipment
 ```
@@ -205,7 +205,7 @@ action, entity, entityId, performedBy->User, before{}, after{}, ip
 10. **Deletar EquipmentModel:** bloqueado se houver Equipment vinculado — retorna `EQUIPMENT_MODEL_IN_USE`
 11. **EquipmentModel:** combinação `brand + model + type` deve ser única no sistema (índice composto, case-insensitive). Retorna `EQUIPMENT_MODEL_DUPLICATE` (409) em caso de duplicata.
 12. **Atribuição restrita a usuários ativos:** `equipmentService.assign` rejeita usuários com `isActive: false`
-12. **Toda operação destrutiva** (delete, desvincular) → registrar no AuditLog
+13. **Toda operação destrutiva** (delete, desvincular) → registrar no AuditLog
 
 ---
 
@@ -292,7 +292,7 @@ router.get('/user-route',  verifyToken, controller)
 
 ## Variáveis de Ambiente
 
-Arquivo: `server/.env` (nunca commitar — usar `.env.example`)
+Arquivo: `server/.env` (nunca commitar — baseado no `.env.example` que foi removido do repo; variáveis abaixo)
 
 ```env
 PORT=5000
@@ -312,7 +312,7 @@ LDAP_DOMAIN=empresa.com.br
 
 ## Estado de Desenvolvimento
 
-> Atualizado em: 2026-05-07
+> Atualizado em: 2026-05-08
 
 - [x] **Fase 1** — Scaffolding + Modelos + Config
 - [x] **Fase 2** — Auth (LDAP + JWT) + Middleware
@@ -332,8 +332,6 @@ LDAP_DOMAIN=empresa.com.br
 
 ---
 
----
-
 ## Decisões Técnicas
 
 ### EquipmentModel — POO aplicado ao cadastro
@@ -343,11 +341,18 @@ LDAP_DOMAIN=empresa.com.br
 - `GET /api/equipment-models/all` retorna apenas modelos ativos — usado nos dropdowns do front-end
 - A listagem paginada (`/api/equipment-models`) inclui `equipmentCount` via aggregation paralela
 - Exclusão bloqueada se `Equipment.countDocuments({ equipmentModel: id }) > 0`
+- Combinação `brand + model + type` possui índice único composto (case-insensitive, collation `pt` strength 2) — duplicatas retornam 409 `EQUIPMENT_MODEL_DUPLICATE`; verificação prévia também feita no service antes do `create`/`update`
+- Campo `purchaseDate` removido do formulário e do schema Zod mas mantido no Mongoose para preservar dados históricos
 - Script `migrate-equipment-model.js` converte registros antigos (brand/model diretos) para o novo schema
 
+### Modal — fechar ao clicar no overlay
+- O componente `Modal.jsx` captura `onClick` no backdrop e chama `onClose`
+- `stopPropagation` no container interno impede que cliques dentro do modal propaguem para o backdrop
+- Todos os modais do sistema usam `Modal.jsx` como base — comportamento é automático e consistente
+
 ### Importação de usuários do AD
-- `ldapService.searchUsers(query)` faz busca parcial no AD (sAMAccountName, displayName, mail) sem autenticar o usuário
-- `ldapService.getUsersByOU(ouPath)` busca **todos** os usuários de uma OU específica via `scope: sub` e filtro `(&(objectClass=user)(sAMAccountName=*))`
+- `ldapService.searchUsers(query)` faz busca parcial no AD (sAMAccountName, displayName, mail) sem autenticar o usuário — filtro restringe a `objectClass=person`, exclui `objectClass=computer` e contas terminadas em `$`
+- `ldapService.getUsersByOU(ouPath)` busca **todos** os usuários de uma OU específica via `scope: sub` — mesmo filtro de exclusão de computadores aplicado
 - `GET /api/users/search-ad?q=termo` — mín. 2 chars, retorna até 25 resultados
 - `POST /api/users/import-ad { usernames[] }` — importa em lote por lista de usernames; usuários já existentes são atualizados; retorna `{ imported, updated, errors[] }`
 - `POST /api/users/sync-ad-bulk { ouPath }` — sincroniza todos os usuários da OU (e sub-OUs); retorna `{ total, imported, updated, errors[] }`
@@ -374,14 +379,11 @@ LDAP_DOMAIN=empresa.com.br
 - `Sector` passou a ter apenas: `name`, `description`, `manager`, `isActive`
 - Todos os arquivos relacionados foram deletados (model, controller, service, routes, página e service front)
 
-### Validação de datas
-- Schema Zod usa `z.preprocess` para converter string vazia em `null`
-- Aceita formato `YYYY-MM-DD` (enviado pelo `<input type="date">`) em vez de ISO datetime
-- Aplicado em EquipmentModel (warrantyExpiry, purchaseDate)
-
-### Datas — timezone UTC
-- Datas do tipo `YYYY-MM-DD` são convertidas para `Date` com horário `T12:00:00.000Z` no `z.preprocess` do Zod (evita o problema D-1 causado pela conversão UTC → fuso local no front-end)
-- A função `formatDate` em `formatters.js` usa `{ timeZone: 'UTC' }` na exibição
+### Validação e exibição de datas
+- Schema Zod usa `z.preprocess` para converter string `YYYY-MM-DD` em `new Date(`${val}T12:00:00.000Z`)` — meio-dia UTC evita o problema D-1 (JS interpreta `YYYY-MM-DD` como meia-noite UTC, que no fuso UTC-3 vira o dia anterior)
+- String vazia é convertida para `null` antes da validação
+- Aplicado em `EquipmentModel` (`warrantyExpiry`)
+- `formatDate` em `formatters.js` usa `{ timeZone: 'UTC' }` para exibir a data sem conversão de fuso
 
 ### Filtros via URL (useUrlFilters)
 - Hook `useUrlFilters` gerencia query params da URL como fonte de verdade dos filtros
@@ -401,11 +403,11 @@ LDAP_DOMAIN=empresa.com.br
 ### patrimonyNumber obrigatório e único
 - Identificador físico do bem (plaqueta) — não pode se repetir
 - Duplicatas retornam HTTP 409 com código `PATRIMONY_NUMBER_DUPLICATE`
-- Antes de aplicar o índice em banco existente, verificar duplicatas via aggregation (ver MELHORIAS_2.md)
+- Antes de aplicar o índice em banco existente, verificar duplicatas via aggregation: `db.equipments.aggregate([{$group:{_id:"$patrimonyNumber",count:{$sum:1}}},{$match:{count:{$gt:1}}}])`
 
 ### Atribuição restrita a usuários ativos
 - `equipmentService.assign` verifica `isActive: true` antes de vincular ao usuário; retorna HTTP 422 com `USER_INACTIVE` se desativado
-- Front-end filtra a lista do AssignForm via `listActiveUsers()` (`GET /api/users?isActive=true&limit=999`) antes mesmo do submit
+- Front-end usa `isActive=true` no parâmetro da busca reativa do AssignForm — usuários inativos nunca aparecem na lista
 
 ### Cards de resumo clicáveis
 - Equipment: total, disponível, atribuído, manutenção, desativado — cada card aplica filtro de status
@@ -427,8 +429,9 @@ LDAP_DOMAIN=empresa.com.br
 - Máximo 3 toasts empilhados (os mais antigos são descartados)
 - Posição: topo-direito
 
-### AssignForm — Autocomplete + Transferência
-- Campo de busca filtra a lista de usuários/setores em memória enquanto digita
+### AssignForm — Busca reativa de usuários + Transferência
+- Campo de busca de usuários chama `GET /api/users?search=&isActive=true&limit=20` com debounce 300ms — nunca carrega todos os usuários em memória
+- Setores ainda usam autocomplete em memória (são poucos e carregados na abertura da página)
 - Se o equipamento já está vinculado, exibe alerta de transferência e muda label do botão para "Transferir"
 - Botão separado "Transferir" (ícone `ArrowRightLeft`) aparece na linha quando o equipamento está vinculado
 
