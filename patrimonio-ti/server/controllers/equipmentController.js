@@ -4,8 +4,8 @@ const { success, error } = require('../utils/apiResponse');
 
 const createSchema = z.object({
   equipmentModel: z.string().min(1, 'Modelo de equipamento obrigatório'),
-  serialNumber: z.string().min(1, 'Número de série obrigatório').max(100),
-  patrimonyNumber: z.preprocess((v) => (v === '' ? null : v), z.string().max(100).nullable().optional()),
+  serialNumber: z.string().max(100).trim().optional().or(z.literal('')).transform((v) => v || undefined),
+  patrimonyNumber: z.string().min(1, 'Número de patrimônio é obrigatório').max(100).trim(),
   notes: z.string().max(1000).optional(),
 });
 
@@ -79,6 +79,7 @@ const assign = async (req, res, next) => {
     if (err.statusCode === 404) return error(res, err.message, 404, 'NOT_FOUND');
     if (err.statusCode === 400) return error(res, err.message, 400, 'BAD_REQUEST');
     if (err.code === 'EQUIPMENT_UNAVAILABLE') return error(res, err.message, 409, err.code);
+    if (err.code === 'USER_INACTIVE') return error(res, err.message, 422, err.code);
     next(err);
   }
 };

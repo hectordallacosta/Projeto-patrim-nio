@@ -51,8 +51,7 @@ patrimonio-ti/
 |   |   |-- equipmentController.js
 |   |   |-- equipmentModelController.js  # CRUD de modelos de equipamento
 |   |   |-- equipmentTypeController.js
-|   |   |-- auditLogController.js
-|   |   `-- searchController.js          # busca global unificada
+|   |   `-- auditLogController.js
 |   |-- middleware/
 |   |   |-- verifyToken.js
 |   |   |-- requireAdmin.js
@@ -71,8 +70,7 @@ patrimonio-ti/
 |   |   |-- equipment.routes.js
 |   |   |-- equipmentModel.routes.js     # GET,POST,PUT,DELETE /api/equipment-models
 |   |   |-- equipmentType.routes.js
-|   |   |-- auditLog.routes.js
-|   |   `-- search.routes.js             # GET /api/search?q=termo
+|   |   `-- auditLog.routes.js
 |   |-- services/
 |   |   |-- ldapService.js               # inclui searchUsers(query) para importacao AD
 |   |   |-- auditService.js
@@ -98,11 +96,10 @@ patrimonio-ti/
     |-- src/
     |   |-- components/
     |   |   |-- layout/
-    |   |   |   |-- Header.jsx           # botao busca global + Ctrl+K
+    |   |   |   |-- Header.jsx           # logo + info do usuário + logout
     |   |   |   |-- Sidebar.jsx          # inclui link para /admin/equipment-models
     |   |   |   `-- Layout.jsx
     |   |   `-- shared/
-    |   |       |-- GlobalSearch.jsx     # command palette Ctrl+K
     |   |       |-- ADSyncModal.jsx      # modal busca/importacao de usuarios do AD
     |   |       |-- ConfirmDialog.jsx
     |   |       |-- ErrorBoundary.jsx    # captura erros de renderizacao React
@@ -178,7 +175,8 @@ purchaseDate, warrantyExpiry, notes, isActive
 ### Equipment
 ```
 equipmentModel->EquipmentModel(obrigatorio),
-serialNumber(unico), patrimonyNumber,
+serialNumber(unico, opcional, índice sparse),
+patrimonyNumber(unico, obrigatorio),
 status(available|assigned|maintenance|decommissioned),
 assignedTo->User (XOR) assignedSector->Sector,
 assignmentHistory[], notes
@@ -202,9 +200,11 @@ action, entity, entityId, performedBy->User, before{}, after{}, ip
 5. **Transferência direta:** `assign` em equipamento já vinculado encerra o vínculo anterior automaticamente
 6. **Equipamento em manutenção/decommissioned:** não pode ser vinculado
 7. **Deletar Sector:** bloquear se houver Users ou Equipments vinculados
-8. **serialNumber:** único no sistema (índice único no Mongoose)
-9. **Deletar EquipmentModel:** bloqueado se houver Equipment vinculado — retorna `EQUIPMENT_MODEL_IN_USE`
-10. **Toda operação destrutiva** (delete, desvincular) → registrar no AuditLog
+8. **serialNumber:** único quando informado (índice sparse — múltiplos equipamentos podem ter serialNumber nulo)
+9. **patrimonyNumber:** obrigatório e único — identifica fisicamente o bem (plaqueta)
+10. **Deletar EquipmentModel:** bloqueado se houver Equipment vinculado — retorna `EQUIPMENT_MODEL_IN_USE`
+11. **Atribuição restrita a usuários ativos:** `equipmentService.assign` rejeita usuários com `isActive: false`
+12. **Toda operação destrutiva** (delete, desvincular) → registrar no AuditLog
 
 ---
 
@@ -224,8 +224,8 @@ action, entity, entityId, performedBy->User, before{}, after{}, ip
 ### Códigos de Erro
 ```
 EQUIPMENT_TYPE_IN_USE | EQUIPMENT_MODEL_IN_USE | SECTOR_HAS_DEPENDENCIES
-SERIAL_NUMBER_DUPLICATE | EQUIPMENT_UNAVAILABLE | LDAP_AUTH_FAILED | LDAP_UNAVAILABLE
-USER_NOT_FOUND_AD | VALIDATION_ERROR
+SERIAL_NUMBER_DUPLICATE | PATRIMONY_NUMBER_DUPLICATE | EQUIPMENT_UNAVAILABLE
+LDAP_AUTH_FAILED | LDAP_UNAVAILABLE | USER_NOT_FOUND_AD | USER_INACTIVE | VALIDATION_ERROR
 ```
 
 ---
@@ -236,7 +236,6 @@ USER_NOT_FOUND_AD | VALIDATION_ERROR
 |--------|------|------|-----------|
 | POST | `/api/auth/login` | — | Login LDAP com fallback local |
 | GET | `/api/auth/me` | token | Dados do usuário logado |
-| GET | `/api/search?q=termo&limit=5` | token | Busca global em equipamentos, usuários e setores |
 | GET | `/api/equipment` | token | Lista com filtros: status, equipmentModel, search, sort, sortDir |
 | POST | `/api/equipment` | admin | Cria equipamento (body: equipmentModel, serialNumber, patrimonyNumber) |
 | PATCH | `/api/equipment/:id/assign` | admin | Vincula (também faz transferência se já vinculado) |
@@ -312,7 +311,7 @@ LDAP_DOMAIN=empresa.com.br
 
 ## Estado de Desenvolvimento
 
-> Atualizado em: 2026-05-06
+> Atualizado em: 2026-05-07
 
 - [x] **Fase 1** — Scaffolding + Modelos + Config
 - [x] **Fase 2** — Auth (LDAP + JWT) + Middleware
@@ -327,6 +326,7 @@ LDAP_DOMAIN=empresa.com.br
 - [x] **Fase 11** — Correções de bugs + remoção SectorType + login local
 - [x] **Fase 12** — UX: busca global, filtros avançados, URL params, cards de resumo, toasts
 - [x] **Fase 13** — EquipmentModel (POO: modelo como template, equipment como instância) + importação AD em lote
+- [x] **Fase 14** — Refinamentos de negócio: filtros por feature, patrimônio obrigatório/único, série opcional, atribuição restrita a usuários ativos
 
 ---
 
@@ -418,12 +418,24 @@ expect(res.status).toBe(409)
 - Estado sobrevive a F5 e permite compartilhar links filtrados
 - Exemplo: `/admin/equipment?status=available&page=2`
 
-### Busca global (Ctrl+K)
-- `GET /api/search?q=termo` busca paralelamente em Equipment, User e Sector
-- Equipment é encontrado por serialNumber, patrimonyNumber ou via EquipmentModel (brand/model/lot)
-- `GlobalSearch.jsx` renderiza resultados agrupados por categoria com highlight do termo
-- Navegação por teclado: cima/baixo navegar, Enter selecionar, Esc fechar
-- Ao selecionar, navega para a listagem com o filtro `search` preenchido
+### Filtros por feature no lugar da busca global
+- Cada listagem (Equipamentos, Usuários, Setores, Modelos) possui sua própria barra de busca inline conectada ao param `search` via `useUrlFilters`
+- A rota `GET /api/search` e os arquivos `GlobalSearch.jsx`, `searchController.js` e `search.routes.js` foram removidos
+- Equipment: busca por serialNumber, patrimonyNumber ou via EquipmentModel (brand/model/lot)
+- EquipmentModels: busca por brand, model ou lot (suportado pelo `equipmentModelService.list`)
+
+### serialNumber opcional com índice sparse
+- `serialNumber` removido como obrigatório — periféricos ou equipamentos sem etiqueta podem ser cadastrados sem ele
+- Índice `sparse: true` garante unicidade apenas quando o campo está presente, permitindo múltiplos documentos sem serialNumber
+
+### patrimonyNumber obrigatório e único
+- Identificador físico do bem (plaqueta) — não pode se repetir
+- Duplicatas retornam HTTP 409 com código `PATRIMONY_NUMBER_DUPLICATE`
+- Antes de aplicar o índice em banco existente, verificar duplicatas via aggregation (ver MELHORIAS_2.md)
+
+### Atribuição restrita a usuários ativos
+- `equipmentService.assign` verifica `isActive: true` antes de vincular ao usuário; retorna HTTP 422 com `USER_INACTIVE` se desativado
+- Front-end filtra a lista do AssignForm via `listActiveUsers()` (`GET /api/users?isActive=true&limit=999`) antes mesmo do submit
 
 ### Cards de resumo clicáveis
 - Equipment: total, disponível, atribuído, manutenção, desativado — cada card aplica filtro de status

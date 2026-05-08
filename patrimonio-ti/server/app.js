@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth.routes');
-const searchRoutes = require('./routes/search.routes');
 const sectorRoutes = require('./routes/sector.routes');
 const equipmentTypeRoutes = require('./routes/equipmentType.routes');
 const equipmentModelRoutes = require('./routes/equipmentModel.routes');
@@ -17,7 +16,6 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
-app.use('/api/search', searchRoutes);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/equipment-types', equipmentTypeRoutes);
 app.use('/api/equipment-models', equipmentModelRoutes);

@@ -16,7 +16,7 @@ import {
 } from '@/services/equipmentService';
 import { listAllEquipmentModels } from '@/services/equipmentModelService';
 import { listEquipmentTypes } from '@/services/equipmentTypeService';
-import { listUsers } from '@/services/userService';
+import { listActiveUsers } from '@/services/userService';
 import { listSectors } from '@/services/sectorService';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDate, statusLabel, statusColor } from '@/utils/formatters';
@@ -92,6 +92,7 @@ function EquipmentForm({ initial, equipmentModels, onSubmit, onCancel, loading }
     notes: '',
     ...initial,
     equipmentModel: initial?.equipmentModel?._id || initial?.equipmentModel || '',
+    patrimonyNumber: initial?.patrimonyNumber || '',
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -139,22 +140,22 @@ function EquipmentForm({ initial, equipmentModels, onSubmit, onCancel, loading }
       {/* Campos individuais do equipamento */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="label">Nº Série *</label>
+          <label className="label">Nº Série</label>
           <input
             className="input font-mono"
             value={form.serialNumber}
             onChange={(e) => set('serialNumber', e.target.value)}
             placeholder="Ex: 1A2B3C4D"
-            required
           />
         </div>
         <div>
-          <label className="label">Nº Patrimônio</label>
+          <label className="label">Nº Patrimônio *</label>
           <input
             className="input font-mono"
             value={form.patrimonyNumber}
             onChange={(e) => set('patrimonyNumber', e.target.value)}
             placeholder="Ex: 001234"
+            required
           />
         </div>
         <div className="col-span-2">
@@ -171,7 +172,7 @@ function EquipmentForm({ initial, equipmentModels, onSubmit, onCancel, loading }
 
       <div className="flex justify-end gap-2 pt-2">
         <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
-        <button type="submit" className="btn-primary" disabled={loading || !form.equipmentModel}>
+        <button type="submit" className="btn-primary" disabled={loading || !form.equipmentModel || !form.patrimonyNumber}>
           {loading && <Loader2 size={14} className="animate-spin" />} Salvar
         </button>
       </div>
@@ -421,7 +422,7 @@ export default function Equipment() {
   useEffect(() => {
     listEquipmentTypes().then(setTypes);
     listAllEquipmentModels().then(setEquipmentModels);
-    listUsers({ limit: 500 }).then((r) => setUsers(r.data));
+    listActiveUsers().then((r) => setUsers(r.data));
     listSectors({ limit: 200 }).then((r) => setSectors(r.data));
   }, []);
 
@@ -443,7 +444,14 @@ export default function Equipment() {
       }
       setModal(null); load();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Erro ao salvar.');
+      const code = err.response?.data?.code;
+      if (code === 'PATRIMONY_NUMBER_DUPLICATE') {
+        toast.error('Número de patrimônio já está em uso por outro equipamento.');
+      } else if (code === 'SERIAL_NUMBER_DUPLICATE') {
+        toast.error('Número de série já está em uso por outro equipamento.');
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao salvar.');
+      }
     } finally { setSaving(false); }
   };
 
@@ -455,7 +463,12 @@ export default function Equipment() {
       toast.success(isTransfer ? 'Equipamento transferido com sucesso!' : 'Equipamento vinculado com sucesso!');
       setModal(null); load();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Erro ao vincular.');
+      const code = err.response?.data?.code;
+      if (code === 'USER_INACTIVE') {
+        toast.error('Este usuário está desativado. Reative-o antes de atribuir equipamentos.');
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao vincular.');
+      }
     } finally { setSaving(false); }
   };
 

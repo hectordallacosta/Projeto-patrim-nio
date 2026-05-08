@@ -1,5 +1,6 @@
 const Equipment = require('../models/Equipment');
 const EquipmentModel = require('../models/EquipmentModel');
+const User = require('../models/User');
 const auditService = require('./auditService');
 const { paginate, paginationMeta } = require('../utils/pagination');
 
@@ -139,6 +140,21 @@ async function assign(id, { assignedTo, assignedSector, note = '' }, userId, ip)
     err.statusCode = 409;
     err.code = 'EQUIPMENT_UNAVAILABLE';
     throw err;
+  }
+
+  if (assignedTo) {
+    const targetUser = await User.findById(assignedTo).select('isActive displayName').lean();
+    if (!targetUser) {
+      const err = new Error('Usuário não encontrado.');
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!targetUser.isActive) {
+      const err = new Error(`O usuário "${targetUser.displayName}" está desativado e não pode receber equipamentos.`);
+      err.statusCode = 422;
+      err.code = 'USER_INACTIVE';
+      throw err;
+    }
   }
 
   const before = equipment.toObject();

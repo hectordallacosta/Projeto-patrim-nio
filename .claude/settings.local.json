@@ -14,7 +14,12 @@
       "PowerShell(& \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.exe\" --config \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.cfg\" --install --serviceName MongoDB --serviceDisplayName \"MongoDB Server 8.2\")",
       "PowerShell(& \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.exe\" --config \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.cfg\" --install --serviceName MongoDB --serviceDisplayName \"MongoDB Server 8.2\" 2>&1)",
       "PowerShell(cd \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\server\"; $env:NODE_ENV=\"development\"; node -e \"require\\('dotenv'\\).config\\(\\); const connectDB = require\\('./config/db'\\); connectDB\\(\\).then\\(\\(\\) => { console.log\\('OK'\\); process.exit\\(0\\); }\\).catch\\(e => { console.error\\('FAIL:', e.message\\); process.exit\\(1\\); }\\)\")",
-      "PowerShell(sc.exe create MongoDB binPath= \"\\\\\"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.exe\\\\\" --service --config \\\\\"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.cfg\\\\\"\" DisplayName= \"MongoDB Server 8.2\" start= auto 2>&1)"
+      "PowerShell(sc.exe create MongoDB binPath= \"\\\\\"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.exe\\\\\" --service --config \\\\\"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.2\\\\bin\\\\mongod.cfg\\\\\"\" DisplayName= \"MongoDB Server 8.2\" start= auto 2>&1)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\client\\\\src\\\\components\\\\shared\\\\GlobalSearch.jsx\" -Force)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\server\\\\controllers\\\\searchController.js\" -Force)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\\\\patrimonio-ti\\\\server\\\\routes\\\\search.routes.js\" -Force)",
+      "Bash(Write-Host \"Deletados com sucesso\")",
+      "PowerShell(Remove-Item *)"
     ]
   }
 }

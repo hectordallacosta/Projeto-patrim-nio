@@ -3,6 +3,7 @@ import api from './api';
 const BASE = '/users';
 
 export const listUsers = (params) => api.get(BASE, { params }).then((r) => r.data);
+export const listActiveUsers = () => api.get(BASE, { params: { isActive: 'true', limit: 999 } }).then((r) => r.data);
 export const getUser = (id) => api.get(`${BASE}/${id}`).then((r) => r.data.data);
 export const updateUser = (id, data) => api.put(`${BASE}/${id}`, data).then((r) => r.data.data);
 export const deactivateUser = (id) => api.patch(`${BASE}/${id}/deactivate`).then((r) => r.data.data);

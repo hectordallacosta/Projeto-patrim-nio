@@ -14,8 +14,8 @@ const assignmentHistorySchema = new mongoose.Schema(
 const equipmentSchema = new mongoose.Schema(
   {
     equipmentModel: { type: mongoose.Schema.Types.ObjectId, ref: 'EquipmentModel', required: true },
-    serialNumber: { type: String, required: true, unique: true, trim: true },
-    patrimonyNumber: { type: String, trim: true, default: null },
+    serialNumber: { type: String, unique: true, sparse: true, trim: true },
+    patrimonyNumber: { type: String, required: [true, 'Número de patrimônio é obrigatório'], unique: true, trim: true },
     status: {
       type: String,
       enum: ['available', 'assigned', 'maintenance', 'decommissioned'],

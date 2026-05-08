@@ -6,7 +6,12 @@ const errorHandler = (err, req, res, next) => {
 
   if (err.code === 11000) {
     const field = Object.keys(err.keyPattern)[0];
-    return error(res, `Valor duplicado para o campo: ${field}`, 409, 'SERIAL_NUMBER_DUPLICATE');
+    const codeMap = {
+      serialNumber:    { code: 'SERIAL_NUMBER_DUPLICATE',    message: 'Número de série já cadastrado.' },
+      patrimonyNumber: { code: 'PATRIMONY_NUMBER_DUPLICATE', message: 'Número de patrimônio já cadastrado.' },
+    };
+    const entry = codeMap[field] ?? { code: 'DUPLICATE_KEY', message: `Valor duplicado para o campo: ${field}` };
+    return error(res, entry.message, 409, entry.code);
   }
 
   if (err.name === 'ValidationError') {

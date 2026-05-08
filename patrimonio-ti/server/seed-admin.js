@@ -36,3 +36,5 @@ seed().catch((err) => {
   console.error('Erro ao criar admin:', err.message);
   process.exit(1);
 });
+// Para rodar: cd server && node seed-admin.js                                                                                                                                                             
+// Cria ou reseta o usuário admin local. Login: admin / Admin@1234 
