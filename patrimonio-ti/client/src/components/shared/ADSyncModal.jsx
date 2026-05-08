@@ -56,6 +56,7 @@ function SearchTab({ onImported }) {
         toast.success(`${result.imported} importado(s), ${result.updated} atualizado(s).`);
         onImported?.();
       }
+      if (result.sectorsCreated > 0) toast.info(`${result.sectorsCreated} setor(es) criado(s) automaticamente.`);
       if (result.errors.length > 0) toast.error(`${result.errors.length} erro(s) na importação.`);
       setSelected([]);
       setQuery('');
@@ -106,6 +107,9 @@ function SearchTab({ onImported }) {
           <ul className="text-green-700 space-y-0.5">
             <li>{importSummary.imported} usuário(s) novo(s) importado(s)</li>
             <li>{importSummary.updated} usuário(s) atualizado(s)</li>
+            {importSummary.sectorsCreated > 0 && (
+              <li className="text-blue-600">{importSummary.sectorsCreated} setor(es) criado(s) automaticamente a partir do AD</li>
+            )}
             {importSummary.errors.length > 0 && (
               <li className="text-red-600">
                 {importSummary.errors.length} erro(s): {importSummary.errors.map((e) => e.username).join(', ')}
@@ -205,6 +209,7 @@ function OUSyncTab({ onImported }) {
       } else if (result.total === 0) {
         toast.warning('Nenhum usuário encontrado na OU informada.');
       }
+      if (result.sectorsCreated > 0) toast.info(`${result.sectorsCreated} setor(es) criado(s) automaticamente.`);
       if (result.errors.length > 0) toast.error(`${result.errors.length} erro(s) na sincronização.`);
     } catch (err) {
       setAdError(err.response?.data?.message || 'Erro ao sincronizar a OU.');
@@ -256,6 +261,9 @@ function OUSyncTab({ onImported }) {
             <li className="text-gray-700">Total de usuários na OU: <strong>{preview.total}</strong></li>
             <li className="text-green-700">{preview.imported} novo(s) importado(s)</li>
             <li className="text-blue-700">{preview.updated} atualizado(s)</li>
+            {preview.sectorsCreated > 0 && (
+              <li className="text-blue-600">{preview.sectorsCreated} setor(es) criado(s) automaticamente a partir do AD</li>
+            )}
             {preview.errors.length > 0 && (
               <li className="text-red-600 mt-1">
                 {preview.errors.length} erro(s):

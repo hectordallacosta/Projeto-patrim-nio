@@ -78,7 +78,8 @@ patrimonio-ti/
 |   |   `-- userService.js               # inclui importFromAD(usernames)
 |   |-- utils/
 |   |   |-- apiResponse.js
-|   |   `-- pagination.js
+|   |   |-- pagination.js
+|   |   `-- ldapUtils.js              # extractSectorAcronym e extractSectorFullName (parsing do DN)
 |   |-- __tests__/
 |   |   |-- auth.test.js
 |   |   |-- equipment.test.js
@@ -329,6 +330,7 @@ LDAP_DOMAIN=empresa.com.br
 - [x] **Fase 13** — EquipmentModel (POO: modelo como template, equipment como instância) + importação AD em lote
 - [x] **Fase 14** — Refinamentos de negócio: filtros por feature, patrimônio obrigatório/único, série opcional, atribuição restrita a usuários ativos
 - [x] **Fase 15** — Melhorias de UX/robustez: filtro LDAP só usuários, toast erro com timeout 6s, remoção purchaseDate, fix D-1 garantia, unicidade EquipmentModel, busca reativa de usuários no AssignForm, fechar modal ao clicar fora
+- [x] **Fase 16** — AssignForm: campo vazio até digitar (hasSearched); extração automática de setor do DN do AD na importação (`ldapUtils.js`); `sectorsCreated` no resumo de importação
 
 ---
 
@@ -351,14 +353,24 @@ LDAP_DOMAIN=empresa.com.br
 - Todos os modais do sistema usam `Modal.jsx` como base — comportamento é automático e consistente
 
 ### Importação de usuários do AD
-- `ldapService.searchUsers(query)` faz busca parcial no AD (sAMAccountName, displayName, mail) sem autenticar o usuário — filtro restringe a `objectClass=person`, exclui `objectClass=computer` e contas terminadas em `$`
-- `ldapService.getUsersByOU(ouPath)` busca **todos** os usuários de uma OU específica via `scope: sub` — mesmo filtro de exclusão de computadores aplicado
+- `ldapService.searchUsers(query)` faz busca parcial no AD (sAMAccountName, displayName, mail) sem autenticar o usuário — filtro restringe a `objectClass=person`, exclui `objectClass=computer` e contas terminadas em `$`; retorna `distinguishedName` de cada usuário
+- `ldapService.getUsersByOU(ouPath)` busca **todos** os usuários de uma OU específica via `scope: sub` — mesmo filtro de exclusão de computadores; retorna `distinguishedName` de cada usuário
+- `ldapService.findUser(username)` também retorna `distinguishedName` para uso na extração do setor
 - `GET /api/users/search-ad?q=termo` — mín. 2 chars, retorna até 25 resultados
 - `POST /api/users/import-ad { usernames[] }` — importa em lote por lista de usernames; usuários já existentes são atualizados; retorna `{ imported, updated, errors[] }`
 - `POST /api/users/sync-ad-bulk { ouPath }` — sincroniza todos os usuários da OU (e sub-OUs); retorna `{ total, imported, updated, errors[] }`
+- Ao importar um usuário **novo**, o `distinguishedName` do AD é parseado por `ldapUtils.extractSectorAcronym` para extrair a sigla do setor (ex: `GETIC` de `"...Centro Administrativo - GETIC,..."`). O setor é criado automaticamente se não existir, usando o nome completo como `description`. Usuários já existentes no banco **não têm o setor sobrescrito** na resincronização.
+- `POST /api/users/import-ad` e `POST /api/users/sync-ad-bulk` retornam `sectorsCreated` no resumo
 - `ADSyncModal.jsx` — modal com **duas abas**:
-  - **"Buscar por nome"** — debounce 400ms, seleção múltipla, importação por usernames
-  - **"Importar por OU"** — campo DN, botão sincronizar, resumo com contagens e erros detalhados
+  - **"Buscar por nome"** — debounce 400ms, seleção múltipla, importação por usernames; exibe `sectorsCreated` no resumo
+  - **"Importar por OU"** — campo DN, botão sincronizar, resumo com contagens, `sectorsCreated` e erros detalhados
+
+### Extração de setor do DN do AD
+- `server/utils/ldapUtils.js` fornece `extractSectorAcronym(dn)` e `extractSectorFullName(dn)`
+- Regra: percorre os segmentos `OU=` do DN do mais específico ao mais geral e retorna a sigla após ` - ` na primeira OU que contiver o padrão (regex `/\s-\s([A-Z0-9]+)\s*$/`)
+- Exemplo: `OU=Gerência de TI - GETIC,...` → sigla `GETIC`, nome `Gerência de TI`
+- `userService.findOrCreateSectorFromDN(dn)` usa o utilitário para encontrar ou criar o setor automaticamente, retornando o `_id`
+- A atribuição ocorre **somente na criação** do usuário (`$setOnInsert`); sincronizações posteriores não sobrescrevem setores definidos manualmente
 
 ### Auth — Login local (fallback LDAP)
 - `authController` tenta LDAP primeiro; se falhar, verifica `localPassword` (bcrypt) no MongoDB
@@ -430,7 +442,9 @@ LDAP_DOMAIN=empresa.com.br
 - Posição: topo-direito
 
 ### AssignForm — Busca reativa de usuários + Transferência
-- Campo de busca de usuários chama `GET /api/users?search=&isActive=true&limit=20` com debounce 300ms — nunca carrega todos os usuários em memória
+- O campo começa **vazio** com mensagem orientadora ("Digite o nome ou usuário para buscar...") — nenhuma chamada à API ao abrir o modal
+- Após digitar ≥1 caractere, chama `GET /api/users?search=&isActive=true&limit=20` com debounce 300ms
+- Estado `hasSearched` distingue "ainda não buscou" (mostra dica) de "buscou mas não encontrou" (mostra "Nenhum usuário encontrado")
 - Setores ainda usam autocomplete em memória (são poucos e carregados na abertura da página)
 - Se o equipamento já está vinculado, exibe alerta de transferência e muda label do botão para "Transferir"
 - Botão separado "Transferir" (ícone `ArrowRightLeft`) aparece na linha quando o equipamento está vinculado

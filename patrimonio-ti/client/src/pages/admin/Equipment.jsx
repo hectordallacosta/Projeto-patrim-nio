@@ -192,13 +192,20 @@ function AssignForm({ equipment, sectors, onSubmit, onCancel, loading }) {
   const [userQuery, setUserQuery] = useState('');
   const [userResults, setUserResults] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const debouncedUserQuery = useDebounce(userQuery, 300);
   const userRef = useRef(null);
 
   useEffect(() => {
+    if (!debouncedUserQuery) {
+      setUserResults([]);
+      setHasSearched(false);
+      return;
+    }
     setLoadingUsers(true);
-    listUsers({ search: debouncedUserQuery || undefined, isActive: 'true', limit: 20 })
+    setHasSearched(true);
+    listUsers({ search: debouncedUserQuery, isActive: 'true', limit: 20 })
       .then((r) => setUserResults(r.data || []))
       .catch(() => setUserResults([]))
       .finally(() => setLoadingUsers(false));
@@ -281,6 +288,8 @@ function AssignForm({ equipment, sectors, onSubmit, onCancel, loading }) {
               <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {loadingUsers ? (
                   <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-gray-400" /></div>
+                ) : !hasSearched ? (
+                  <p className="px-3 py-2 text-sm text-gray-400">Digite o nome ou usuário para buscar...</p>
                 ) : userResults.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-gray-400">Nenhum usuário encontrado.</p>
                 ) : (

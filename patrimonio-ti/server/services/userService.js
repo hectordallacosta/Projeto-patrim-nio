@@ -1,8 +1,29 @@
 const User = require('../models/User');
+const Sector = require('../models/Sector');
 const Equipment = require('../models/Equipment');
 const ldapService = require('./ldapService');
 const auditService = require('./auditService');
 const { paginate, paginationMeta } = require('../utils/pagination');
+const { extractSectorAcronym, extractSectorFullName } = require('../utils/ldapUtils');
+
+/**
+ * Dado o distinguishedName do AD, encontra ou cria o setor pela sigla extraída do DN.
+ * Retorna o ObjectId do setor ou null se o DN não contiver sigla.
+ */
+async function findOrCreateSectorFromDN(distinguishedName) {
+  const acronym = extractSectorAcronym(distinguishedName);
+  if (!acronym) return null;
+
+  let sector = await Sector.findOne({ name: acronym }, null, { collation: { locale: 'pt', strength: 2 } });
+
+  if (!sector) {
+    const fullName = extractSectorFullName(distinguishedName);
+    sector = await Sector.create({ name: acronym, description: fullName || acronym, isActive: true });
+    console.log(`[userService] Setor criado automaticamente: ${acronym}`);
+  }
+
+  return sector._id;
+}
 
 const POPULATE_SECTOR = { path: 'sector', select: 'name' };
 
@@ -121,6 +142,9 @@ async function syncFromAD(username, performedBy, ip) {
 
   const before = await User.findOne({ username }).lean();
 
+  // Setor extraído do DN — atribuído apenas na criação (não sobrescreve setor definido manualmente)
+  const sectorId = before ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
+
   const user = await User.findOneAndUpdate(
     { username: adUser.username },
     {
@@ -130,7 +154,11 @@ async function syncFromAD(username, performedBy, ip) {
         adImported: true,
         adDepartment: adUser.adDepartment,
       },
-      $setOnInsert: { role: 'user', isActive: true },
+      $setOnInsert: {
+        role: 'user',
+        isActive: true,
+        ...(sectorId && { sector: sectorId }),
+      },
     },
     { upsert: true, new: true, runValidators: true }
   ).populate(POPULATE_SECTOR).select('-__v');
@@ -153,7 +181,9 @@ async function syncFromAD(username, performedBy, ip) {
  * Retorna resumo: imported, updated, errors.
  */
 async function importFromAD(usernames, performedBy, ip) {
-  const results = { imported: 0, updated: 0, errors: [] };
+  const results = { imported: 0, updated: 0, sectorsCreated: 0, errors: [] };
+
+  const sectorsBeforeCount = await Sector.countDocuments();
 
   for (const username of usernames) {
     try {
@@ -166,6 +196,7 @@ async function importFromAD(usernames, performedBy, ip) {
     }
   }
 
+  results.sectorsCreated = (await Sector.countDocuments()) - sectorsBeforeCount;
   return results;
 }
 
@@ -175,11 +206,16 @@ async function importFromAD(usernames, performedBy, ip) {
  */
 async function syncBulkFromAD(ouPath, performedBy, ip) {
   const adUsers = await ldapService.getUsersByOU(ouPath);
-  const results = { total: adUsers.length, imported: 0, updated: 0, errors: [] };
+  const results = { total: adUsers.length, imported: 0, updated: 0, sectorsCreated: 0, errors: [] };
+
+  const sectorsBeforeCount = await Sector.countDocuments();
 
   for (const adUser of adUsers) {
     try {
       const before = await User.findOne({ username: adUser.username }).lean();
+
+      // Setor extraído do DN — apenas para usuários novos
+      const sectorId = before ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
 
       await User.findOneAndUpdate(
         { username: adUser.username },
@@ -190,7 +226,11 @@ async function syncBulkFromAD(ouPath, performedBy, ip) {
             adImported: true,
             adDepartment: adUser.adDepartment,
           },
-          $setOnInsert: { role: 'user', isActive: true },
+          $setOnInsert: {
+            role: 'user',
+            isActive: true,
+            ...(sectorId && { sector: sectorId }),
+          },
         },
         { upsert: true, new: true, runValidators: true }
       );
@@ -202,6 +242,7 @@ async function syncBulkFromAD(ouPath, performedBy, ip) {
     }
   }
 
+  results.sectorsCreated = (await Sector.countDocuments()) - sectorsBeforeCount;
   return results;
 }
 

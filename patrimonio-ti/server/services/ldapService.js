@@ -104,17 +104,18 @@ async function findUser(username) {
     const { searchEntries } = await client.search(ldapConfig.userSearchBase, {
       scope: 'sub',
       filter: `(sAMAccountName=${username})`,
-      attributes: ['displayName', 'mail', 'department', 'sAMAccountName'],
+      attributes: ['displayName', 'mail', 'department', 'sAMAccountName', 'distinguishedName'],
     });
 
     if (!searchEntries.length) return null;
 
     const entry = searchEntries[0];
     return {
-      username:     val(entry.sAMAccountName) || username,
-      email:        val(entry.mail),
-      displayName:  val(entry.displayName) || username,
-      adDepartment: val(entry.department),
+      username:          val(entry.sAMAccountName) || username,
+      email:             val(entry.mail),
+      displayName:       val(entry.displayName) || username,
+      adDepartment:      val(entry.department),
+      distinguishedName: val(entry.distinguishedName) || val(entry.dn),
     };
   } finally {
     await client.unbind().catch(() => {});
@@ -139,15 +140,16 @@ async function searchUsers(query) {
     const { searchEntries } = await client.search(ldapConfig.userSearchBase, {
       scope: 'sub',
       filter,
-      attributes: ['displayName', 'mail', 'department', 'sAMAccountName'],
+      attributes: ['displayName', 'mail', 'department', 'sAMAccountName', 'distinguishedName'],
       sizeLimit: 25,
     });
 
     return searchEntries.map((entry) => ({
-      username:     val(entry.sAMAccountName),
-      email:        val(entry.mail),
-      displayName:  val(entry.displayName),
-      adDepartment: val(entry.department),
+      username:          val(entry.sAMAccountName),
+      email:             val(entry.mail),
+      displayName:       val(entry.displayName),
+      adDepartment:      val(entry.department),
+      distinguishedName: val(entry.distinguishedName) || val(entry.dn),
     })).filter((u) => u.username);
   } finally {
     await client.unbind().catch(() => {});
@@ -172,15 +174,16 @@ async function getUsersByOU(ouPath) {
     const { searchEntries } = await client.search(ouPath.trim(), {
       scope: 'sub',
       filter: '(&(objectClass=person)(!(objectClass=computer))(!(sAMAccountName=*$))(sAMAccountName=*))',
-      attributes: ['displayName', 'mail', 'department', 'sAMAccountName'],
+      attributes: ['displayName', 'mail', 'department', 'sAMAccountName', 'distinguishedName'],
     });
 
     return searchEntries
       .map((entry) => ({
-        username:     val(entry.sAMAccountName),
-        email:        val(entry.mail),
-        displayName:  val(entry.displayName),
-        adDepartment: val(entry.department),
+        username:          val(entry.sAMAccountName),
+        email:             val(entry.mail),
+        displayName:       val(entry.displayName),
+        adDepartment:      val(entry.department),
+        distinguishedName: val(entry.distinguishedName) || val(entry.dn),
       }))
       .filter((u) => u.username);
   } finally {
