@@ -6,3 +6,4 @@ dist/
 
 # Documentação interna do Claude Code (contém contexto do ambiente local)
 CLAUDE.md
+settings.local.json
