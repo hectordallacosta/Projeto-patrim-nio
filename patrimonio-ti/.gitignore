@@ -3,3 +3,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Documentação interna do Claude Code (contém contexto do ambiente local)
+CLAUDE.md

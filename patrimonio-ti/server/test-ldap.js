@@ -3,7 +3,7 @@
  *   node test-ldap.js <username> "<senha>"
  *
  * Exemplo:
- *   node test-ldap.js hector.dallacosta "MinhaSenh@123"
+ *   node test-ldap.js usuario.exemplo "SuaSenha@123"
  */
 
 require('dotenv').config();
@@ -108,9 +108,10 @@ async function run() {
     console.log('      mail           :', val(entry.mail));
     console.log('      department     :', val(entry.department));
     console.log('      userPrincipalName:', val(entry.userPrincipalName));
+    console.log('\n      Todas as chaves do objeto entry (para identificar o nome do atributo DN):');
+    console.log(`        ${Object.keys(entry).join(', ')}`);
     console.log('\n      Atributos brutos (para debug):');
     for (const [k, v] of Object.entries(entry)) {
-      if (k === 'dn') continue;
       console.log(`        ${k}: ${JSON.stringify(v)}`);
     }
     console.log();
@@ -160,11 +161,63 @@ async function run() {
   await clientUser.unbind();
 
   // ── Etapa 4: resumo ──
-  console.log('[4/4] Resumo — dados que serão salvos no MongoDB:');
+  console.log('[4/5] Resumo — dados que serão salvos no MongoDB:');
   console.log('      username     :', val(entry.sAMAccountName));
   console.log('      displayName  :', val(entry.displayName) || username);
   console.log('      email        :', val(entry.mail) || `${username}@${cfg.domain}`);
   console.log('      adDepartment :', val(entry.department));
+  console.log();
+
+  // ── Etapa 5: diagnóstico de distinguishedName e extração de setor ──
+  const { extractSectorAcronym } = require('./utils/ldapUtils');
+
+  console.log('[5/5] Diagnóstico de distinguishedName → extração de setor:');
+  console.log('─────────────────────────────────────────────────────────────');
+
+  // Mostra entry.dn (propriedade built-in que o ldapts sempre popula com o DN do protocolo LDAP)
+  console.log('\n[LDAP] entry.dn  (built-in do ldapts):');
+  console.log(`  tipo : ${typeof entry.dn}`);
+  console.log(`  valor: ${JSON.stringify(entry.dn)}`);
+
+  // Mostra entry.distinguishedName (atributo retornado pelo servidor AD, se listado em attributes)
+  console.log('\n[LDAP] entry.distinguishedName  (atributo explícito):');
+  console.log(`  tipo : ${typeof entry.distinguishedName}`);
+  console.log(`  valor: ${JSON.stringify(entry.distinguishedName)}`);
+
+  // Determina qual DN usar (mesma lógica do ldapService)
+  const dnUsed = val(entry.distinguishedName) || (typeof entry.dn === 'string' ? entry.dn : null);
+  console.log(`\n[LDAP] DN efetivo usado para extração:\n  ${dnUsed ?? '(NULO — nenhum DN disponível!)'}`);
+
+  if (dnUsed) {
+    const segments = dnUsed
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.toUpperCase().startsWith('OU='))
+      .map((s) => s.substring(3));
+
+    console.log(`\n[LDAP] Segmentos OU= encontrados (${segments.length}):`);
+    if (segments.length === 0) {
+      console.log('  (nenhum — verifique o formato do DN acima)');
+    }
+    segments.forEach((seg, i) => {
+      const match = seg.match(/\s-\s([A-Z0-9]+)\s*$/);
+      console.log(`  [${i}] ${seg}  ${match ? `→ sigla candidata: "${match[1]}"` : '(sem padrão " - SIGLA")'}`);
+    });
+  } else {
+    console.log('\n  ✗ DN indisponível — o ldapts não está retornando o DN.');
+    console.log('  → Verificar se "distinguishedName" está no array attributes da busca.');
+  }
+
+  const sigla = extractSectorAcronym(dnUsed);
+  console.log(`\n[LDAP] extractSectorAcronym() retornou: ${sigla != null ? `"${sigla}"` : '(null)'}`);
+  if (sigla == null && dnUsed) {
+    console.log('  → Nenhuma OU correspondeu ao padrão /\\s-\\s([A-Z0-9]+)\\s*$/');
+    console.log('  → Possíveis causas:');
+    console.log('    • A sigla contém letras minúsculas ou caracteres especiais (ex: "GETIC-TI")');
+    console.log('    • O separador não é " - " (espaço-hífen-espaço): verifique o DN acima');
+    console.log('    • A OU relevante não segue o padrão "Nome Completo - SIGLA"');
+  }
+  console.log('─────────────────────────────────────────────────────────────');
   console.log('\n✓ AUTENTICAÇÃO LDAP COMPLETA — tudo funcionando!\n');
 }
 

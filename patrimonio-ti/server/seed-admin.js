@@ -6,7 +6,8 @@ const User = require('./models/User');
 async function seed() {
   await mongoose.connect(process.env.MONGODB_URI);
 
-  const hash = await bcrypt.hash('Admin@1234', 10);
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@1234';
+  const hash = await bcrypt.hash(adminPassword, 10);
 
   const user = await User.findOneAndUpdate(
     { username: 'admin' },
@@ -24,7 +25,7 @@ async function seed() {
   console.log('');
   console.log('✓ Usuário admin criado/atualizado com sucesso!');
   console.log('  Login   : admin');
-  console.log('  Senha   : Admin@1234');
+  console.log('  Senha   : (definida por ADMIN_PASSWORD ou padrão do .env)');
   console.log('  Role    : admin');
   console.log('  ID      :', user._id.toString());
   console.log('');
@@ -36,5 +37,5 @@ seed().catch((err) => {
   console.error('Erro ao criar admin:', err.message);
   process.exit(1);
 });
-// Para rodar: cd server && node seed-admin.js                                                                                                                                                             
-// Cria ou reseta o usuário admin local. Login: admin / Admin@1234 
+// Para rodar: cd server && node seed-admin.js
+// Cria ou reseta o usuário admin local. A senha é definida por ADMIN_PASSWORD no .env (padrão configurável).
