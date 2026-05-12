@@ -121,4 +121,40 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { list, getOne, create, update, assign, unassign, changeStatus, remove };
+const analyticsBySector = async (req, res, next) => {
+  try {
+    const data = await equipmentService.getAssetsBySector();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const analyticsByType = async (req, res, next) => {
+  try {
+    const data = await equipmentService.getAssetsByType();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const analyticsByModelSector = async (req, res, next) => {
+  try {
+    const data = await equipmentService.getModelsBySector();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const analyticsRecent = async (req, res, next) => {
+  try {
+    const data = await equipmentService.getRecentAssignments();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { list, getOne, create, update, assign, unassign, changeStatus, remove, analyticsBySector, analyticsByType, analyticsByModelSector, analyticsRecent };

@@ -289,4 +289,83 @@ async function remove(id, userId, ip) {
   });
 }
 
-module.exports = { list, getById, create, update, assign, unassign, updateStatus, remove };
+async function getAssetsBySector() {
+  const [bySector, byUser] = await Promise.all([
+    Equipment.aggregate([
+      { $match: { status: 'assigned', assignedSector: { $ne: null } } },
+      { $group: { _id: '$assignedSector', total: { $sum: 1 } } },
+      { $lookup: { from: 'sectors', localField: '_id', foreignField: '_id', as: 'sector' } },
+      { $unwind: '$sector' },
+      { $project: { _id: 0, sector: '$sector.name', total: 1 } },
+    ]),
+    Equipment.aggregate([
+      { $match: { status: 'assigned', assignedTo: { $ne: null } } },
+      { $lookup: { from: 'users', localField: 'assignedTo', foreignField: '_id', as: 'user' } },
+      { $unwind: '$user' },
+      { $group: { _id: '$user.sector', total: { $sum: 1 } } },
+      { $match: { _id: { $ne: null } } },
+      { $lookup: { from: 'sectors', localField: '_id', foreignField: '_id', as: 'sector' } },
+      { $unwind: '$sector' },
+      { $project: { _id: 0, sector: '$sector.name', total: 1 } },
+    ]),
+  ]);
+
+  const totals = {};
+  [...bySector, ...byUser].forEach(({ sector, total }) => {
+    totals[sector] = (totals[sector] || 0) + total;
+  });
+
+  return Object.entries(totals)
+    .map(([sector, total]) => ({ sector, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+async function getAssetsByType() {
+  return Equipment.aggregate([
+    { $match: { status: { $nin: ['decommissioned'] } } },
+    { $lookup: { from: 'equipmentmodels', localField: 'equipmentModel', foreignField: '_id', as: 'model' } },
+    { $unwind: '$model' },
+    { $lookup: { from: 'equipmenttypes', localField: 'model.type', foreignField: '_id', as: 'type' } },
+    { $unwind: '$type' },
+    { $group: { _id: '$type.name', total: { $sum: 1 } } },
+    { $project: { _id: 0, type: '$_id', total: 1 } },
+    { $sort: { total: -1 } },
+  ]);
+}
+
+async function getModelsBySector() {
+  return Equipment.aggregate([
+    { $match: { status: 'assigned', assignedSector: { $ne: null } } },
+    { $lookup: { from: 'equipmentmodels', localField: 'equipmentModel', foreignField: '_id', as: 'model' } },
+    { $unwind: '$model' },
+    { $lookup: { from: 'sectors', localField: 'assignedSector', foreignField: '_id', as: 'sector' } },
+    { $unwind: '$sector' },
+    {
+      $group: {
+        _id: { sector: '$sector.name', model: { $concat: ['$model.brand', ' ', '$model.model'] } },
+        total: { $sum: 1 },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.sector',
+        models: { $push: { model: '$_id.model', total: '$total' } },
+        totalAssets: { $sum: '$total' },
+      },
+    },
+    { $project: { _id: 0, sector: '$_id', models: 1, totalAssets: 1 } },
+    { $sort: { totalAssets: -1 } },
+  ]);
+}
+
+async function getRecentAssignments() {
+  return Equipment.find({ status: 'assigned' })
+    .sort({ updatedAt: -1 })
+    .limit(10)
+    .populate('equipmentModel', 'brand model')
+    .populate('assignedTo', 'displayName')
+    .populate('assignedSector', 'name')
+    .lean();
+}
+
+module.exports = { list, getById, create, update, assign, unassign, updateStatus, remove, getAssetsBySector, getAssetsByType, getModelsBySector, getRecentAssignments };

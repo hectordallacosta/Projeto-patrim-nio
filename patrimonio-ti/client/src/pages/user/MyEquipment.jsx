@@ -4,6 +4,7 @@ import PageTitle from '@/components/shared/PageTitle';
 import StatusBadge from '@/components/shared/StatusBadge';
 import EmptyState from '@/components/shared/EmptyState';
 import { getMyEquipment } from '@/services/userService';
+import { getMe } from '@/services/authService';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDate } from '@/utils/formatters';
 import { cn } from '@/utils/cn';
@@ -24,12 +25,19 @@ function OriginBadge({ item, userId }) {
 export default function MyEquipment() {
   const { user } = useAuth();
   const [data, setData] = useState([]);
+  const [sectorName, setSectorName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    getMyEquipment()
-      .then(setData)
+    Promise.all([
+      getMyEquipment(),
+      getMe(),
+    ])
+      .then(([equipment, me]) => {
+        setData(equipment);
+        setSectorName(me?.sector?.name || null);
+      })
       .catch(() => setError('Não foi possível carregar os equipamentos.'))
       .finally(() => setLoading(false));
   }, []);
@@ -73,9 +81,21 @@ export default function MyEquipment() {
 
           {sector.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-                <Building2 size={15} /> Do seu setor ({sector.length})
-              </h2>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                  <Building2 size={15} /> Equipamentos do Setor ({sector.length})
+                  {sectorName && (
+                    <span className="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700 normal-case tracking-normal">
+                      {sectorName}
+                    </span>
+                  )}
+                </h2>
+                {!sectorName && (
+                  <p className="text-xs text-gray-400 italic mt-1">
+                    Você não está vinculado a nenhum setor. Contate o administrador.
+                  </p>
+                )}
+              </div>
               <EquipmentTable items={sector} userId={user?.id} />
             </section>
           )}

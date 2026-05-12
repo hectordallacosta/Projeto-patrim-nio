@@ -20,8 +20,8 @@ function extractSectorAcronym(distinguishedName) {
     .map((s) => s.substring(3));
 
   for (const ou of ouSegments) {
-    const match = ou.match(/\s-\s([A-Z0-9]+)\s*$/);
-    if (match) return match[1].trim();
+    const match = ou.match(/\s-\s([A-Za-z0-9]+)\s*$/);
+    if (match) return match[1].trim().toUpperCase();
   }
 
   return null;
@@ -44,7 +44,7 @@ function extractSectorFullName(distinguishedName) {
     .map((s) => s.substring(3));
 
   for (const ou of ouSegments) {
-    const match = ou.match(/^(.+?)\s-\s[A-Z0-9]+\s*$/);
+    const match = ou.match(/^(.+?)\s-\s[A-Za-z0-9]+\s*$/);
     if (match) return match[1].trim();
   }
 

@@ -142,8 +142,9 @@ async function syncFromAD(username, performedBy, ip) {
 
   const before = await User.findOne({ username }).lean();
 
-  // Setor extraído do DN — atribuído apenas na criação (não sobrescreve setor definido manualmente)
-  const sectorId = before ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
+  // Atribui setor se o usuário não tiver setor definido (novo ou existente sem setor).
+  // Nunca sobrescreve setor já atribuído (importação manual ou anterior).
+  const sectorId = before?.sector ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
 
   const user = await User.findOneAndUpdate(
     { username: adUser.username },
@@ -153,11 +154,11 @@ async function syncFromAD(username, performedBy, ip) {
         displayName: adUser.displayName,
         adImported: true,
         adDepartment: adUser.adDepartment,
+        ...(sectorId && { sector: sectorId }),
       },
       $setOnInsert: {
         role: 'user',
         isActive: true,
-        ...(sectorId && { sector: sectorId }),
       },
     },
     { upsert: true, new: true, runValidators: true }
@@ -214,8 +215,9 @@ async function syncBulkFromAD(ouPath, performedBy, ip) {
     try {
       const before = await User.findOne({ username: adUser.username }).lean();
 
-      // Setor extraído do DN — apenas para usuários novos
-      const sectorId = before ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
+      // Atribui setor se o usuário não tiver setor definido (novo ou existente sem setor).
+      // Nunca sobrescreve setor já atribuído.
+      const sectorId = before?.sector ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
 
       await User.findOneAndUpdate(
         { username: adUser.username },
@@ -225,11 +227,11 @@ async function syncBulkFromAD(ouPath, performedBy, ip) {
             displayName: adUser.displayName,
             adImported: true,
             adDepartment: adUser.adDepartment,
+            ...(sectorId && { sector: sectorId }),
           },
           $setOnInsert: {
             role: 'user',
             isActive: true,
-            ...(sectorId && { sector: sectorId }),
           },
         },
         { upsert: true, new: true, runValidators: true }

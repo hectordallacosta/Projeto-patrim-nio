@@ -23,7 +23,10 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hector.dallacosta\\\\Documents\\\\projetos_python_LOCAL\" -Recurse -Filter \"MELHORIAS_3.md\")",
       "Bash(Select-Object FullName)",
       "Bash(git commit *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(npm test *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\HECTOR~1.DAL\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-hector-dallacosta-Documents-projetos-python-LOCAL\\\\b7f53ef2-8234-4573-8fe5-2e436a4b775c\\\\tasks\\\\b2yg31yys.output\" -Wait)",
+      "Bash(Select-String -Pattern \"Tests:|Test Suites:|PASS|FAIL|ERROR\" --SimpleMatch)"
     ]
   }
 }

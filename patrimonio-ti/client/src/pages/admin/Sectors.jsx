@@ -1,58 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Loader2, Filter, X, Users, Monitor } from 'lucide-react';
+import { Trash2, Loader2, Filter, X, Users, Monitor } from 'lucide-react';
 import PageTitle from '@/components/shared/PageTitle';
-import Modal from '@/components/shared/Modal';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import Pagination from '@/components/shared/Pagination';
 import EmptyState from '@/components/shared/EmptyState';
-import { listSectors, createSector, updateSector, deleteSector } from '@/services/sectorService';
-import { listUsers } from '@/services/userService';
+import { listSectors, deleteSector } from '@/services/sectorService';
 import { useDebounce } from '@/hooks/useDebounce';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/utils/cn';
-
-function SectorForm({ initial, users, onSubmit, onCancel, loading }) {
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    manager: '',
-    isActive: true,
-    ...initial,
-    manager: initial?.manager?._id || initial?.manager || '',
-  });
-  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-4">
-      <div>
-        <label className="label">Nome *</label>
-        <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} required autoFocus />
-      </div>
-      <div>
-        <label className="label">Descrição</label>
-        <input className="input" value={form.description} onChange={(e) => set('description', e.target.value)} />
-      </div>
-      <div>
-        <label className="label">Gestor</label>
-        <select className="input" value={form.manager} onChange={(e) => set('manager', e.target.value || null)}>
-          <option value="">Sem gestor</option>
-          {users.map((u) => <option key={u._id} value={u._id}>{u.displayName} ({u.username})</option>)}
-        </select>
-      </div>
-      <div className="flex items-center gap-2">
-        <input type="checkbox" id="isActive" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} className="rounded border-gray-300" />
-        <label htmlFor="isActive" className="text-sm text-gray-700">Ativo</label>
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
-        <button type="submit" className="btn-primary" disabled={loading}>
-          {loading && <Loader2 size={14} className="animate-spin" />} Salvar
-        </button>
-      </div>
-    </form>
-  );
-}
 
 export default function Sectors() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,8 +26,6 @@ export default function Sectors() {
   const [pagination, setPagination] = useState(null);
   const [stats, setStats]       = useState(null);
   const [loading, setLoading]   = useState(true);
-  const [users, setUsers]       = useState([]);
-  const [modal, setModal]       = useState(null);
   const [confirm, setConfirm]   = useState(null);
   const [saving, setSaving]     = useState(false);
 
@@ -128,7 +82,6 @@ export default function Sectors() {
         inactive:inactive.pagination.total,
       });
     });
-    listUsers({ limit: 200 }).then((r) => setUsers(r.data));
   }, []);
 
   const setPage = (p) => setSearchParams((prev) => {
@@ -136,22 +89,6 @@ export default function Sectors() {
     next.set('page', String(p));
     return next;
   }, { replace: true });
-
-  const handleSave = async (form) => {
-    setSaving(true);
-    try {
-      if (modal.mode === 'create') {
-        await createSector(form);
-        toast.success('Setor criado com sucesso!');
-      } else {
-        await updateSector(modal.item._id, form);
-        toast.success('Setor atualizado.');
-      }
-      setModal(null); load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Erro ao salvar.');
-    } finally { setSaving(false); }
-  };
 
   const handleDelete = async () => {
     setSaving(true);
@@ -167,14 +104,12 @@ export default function Sectors() {
 
   return (
     <div className="space-y-4">
-      <PageTitle
-        title="Setores"
-        action={
-          <button className="btn-primary" onClick={() => setModal({ mode: 'create' })}>
-            <Plus size={16} /> Novo Setor
-          </button>
-        }
-      />
+      <PageTitle title="Setores" />
+
+      <div className="mb-4 rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
+        Os setores são criados e gerenciados automaticamente a partir do Active Directory.
+        Para adicionar um setor, importe os usuários correspondentes via <strong>Usuários → Sincronizar com AD</strong>.
+      </div>
 
       {/* Cards de resumo */}
       {stats && (
@@ -246,7 +181,7 @@ export default function Sectors() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Usuários</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Equipamentos</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Status</th>
-                <th className="px-4 py-3 w-20" />
+                <th className="px-4 py-3 w-16" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -275,10 +210,7 @@ export default function Sectors() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => setModal({ mode: 'edit', item })} className="p-1.5 text-gray-400 hover:text-primary-600 rounded" title="Editar">
-                        <Pencil size={15} />
-                      </button>
+                    <div className="flex justify-end">
                       <button onClick={() => setConfirm(item)} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Excluir">
                         <Trash2 size={15} />
                       </button>
@@ -297,10 +229,6 @@ export default function Sectors() {
         </p>
       )}
       <Pagination pagination={pagination} onPageChange={setPage} />
-
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.mode === 'create' ? 'Novo Setor' : 'Editar Setor'}>
-        {modal && <SectorForm initial={modal.item} users={users} onSubmit={handleSave} onCancel={() => setModal(null)} loading={saving} />}
-      </Modal>
 
       <ConfirmDialog
         open={!!confirm}

@@ -10,3 +10,8 @@ export const assignEquipment = (id, data) => api.patch(`${BASE}/${id}/assign`, d
 export const unassignEquipment = (id, note) => api.patch(`${BASE}/${id}/unassign`, { note }).then((r) => r.data.data);
 export const changeEquipmentStatus = (id, status) => api.patch(`${BASE}/${id}/status`, { status }).then((r) => r.data.data);
 export const deleteEquipment = (id) => api.delete(`${BASE}/${id}`).then((r) => r.data);
+
+export const getAnalyticsBySector     = () => api.get(`${BASE}/analytics/by-sector`).then((r) => r.data.data);
+export const getAnalyticsByType       = () => api.get(`${BASE}/analytics/by-type`).then((r) => r.data.data);
+export const getAnalyticsByModelSector = () => api.get(`${BASE}/analytics/by-model-sector`).then((r) => r.data.data);
+export const getAnalyticsRecent       = () => api.get(`${BASE}/analytics/recent`).then((r) => r.data.data);
