@@ -7,15 +7,17 @@ const EquipmentType = require('../models/EquipmentType');
 const EquipmentModel = require('../models/EquipmentModel');
 const Equipment = require('../models/Equipment');
 const Sector = require('../models/Sector');
+const Stock = require('../models/Stock');
 
 jest.mock('../services/ldapService');
 
-const MONGO_URI = 'mongodb://localhost:27017/patrimonio_ti_test';
+const MONGO_URI = 'mongodb://localhost:27018/patrimonio_ti_test';
 
 let adminToken;
 let userToken;
 let equipmentModelId;
 let sectorId;
+let stockId;
 let userId;
 
 beforeAll(async () => {
@@ -45,13 +47,16 @@ beforeAll(async () => {
   userToken = res.body.data.token;
   userId = res.body.data.user.id;
 
-  // Cria tipo, modelo de equipamento e setor para os testes
+  // Cria tipo, modelo de equipamento, setor e estoque para os testes
   const et = await EquipmentType.create({ name: 'Notebook' });
   const em = await EquipmentModel.create({ type: et._id, brand: 'Dell', model: 'Latitude' });
   equipmentModelId = em._id.toString();
 
   const sector = await Sector.create({ name: 'TI' });
   sectorId = sector._id.toString();
+
+  const stock = await Stock.create({ name: 'Estoque Teste' });
+  stockId = stock._id.toString();
 });
 
 afterEach(async () => {
@@ -65,6 +70,7 @@ afterAll(async () => {
   await EquipmentModel.deleteMany({});
   await EquipmentType.deleteMany({});
   await Sector.deleteMany({});
+  await Stock.deleteMany({});
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
 });
@@ -74,27 +80,28 @@ describe('POST /api/equipment', () => {
     const res = await request(app)
       .post('/api/equipment')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ equipmentModel: equipmentModelId, serialNumber: 'SN001' });
+      .send({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN001', patrimonyNumber: 'PAT-001' });
 
     expect(res.status).toBe(201);
     expect(res.body.data.serialNumber).toBe('SN001');
+    expect(res.body.data.status).toBe('in_stock');
   });
 
   it('usuário comum não pode criar', async () => {
     const res = await request(app)
       .post('/api/equipment')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ equipmentModel: equipmentModelId, serialNumber: 'SN002' });
+      .send({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN002', patrimonyNumber: 'PAT-002' });
 
     expect(res.status).toBe(403);
   });
 
   it('bloqueia serialNumber duplicado', async () => {
-    await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-DUP' });
+    await Equipment.create({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN-DUP', patrimonyNumber: 'PAT-DUP-1', status: 'in_stock' });
     const res = await request(app)
       .post('/api/equipment')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ equipmentModel: equipmentModelId, serialNumber: 'SN-DUP' });
+      .send({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN-DUP', patrimonyNumber: 'PAT-DUP-2' });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('SERIAL_NUMBER_DUPLICATE');
@@ -104,7 +111,7 @@ describe('POST /api/equipment', () => {
     const res = await request(app)
       .post('/api/equipment')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ serialNumber: 'SN-SEM-MODELO' });
+      .send({ stock: stockId, serialNumber: 'SN-SEM-MODELO', patrimonyNumber: 'PAT-SEM-MODELO' });
 
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('VALIDATION_ERROR');
@@ -113,7 +120,7 @@ describe('POST /api/equipment', () => {
 
 describe('PATCH /api/equipment/:id/assign', () => {
   it('vincula equipamento a usuário', async () => {
-    const eq = await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-A1' });
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN-A1', patrimonyNumber: 'PAT-A1', status: 'in_stock' });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/assign`)
@@ -125,7 +132,7 @@ describe('PATCH /api/equipment/:id/assign', () => {
   });
 
   it('vincula equipamento a setor', async () => {
-    const eq = await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-A2' });
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN-A2', patrimonyNumber: 'PAT-A2', status: 'in_stock' });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/assign`)
@@ -137,7 +144,7 @@ describe('PATCH /api/equipment/:id/assign', () => {
   });
 
   it('bloqueia vínculo duplo (usuário e setor)', async () => {
-    const eq = await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-A3' });
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: stockId, serialNumber: 'SN-A3', patrimonyNumber: 'PAT-A3', status: 'in_stock' });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/assign`)
@@ -149,7 +156,7 @@ describe('PATCH /api/equipment/:id/assign', () => {
 
   it('bloqueia vínculo em equipamento em manutenção', async () => {
     const eq = await Equipment.create({
-      equipmentModel: equipmentModelId, serialNumber: 'SN-A4', status: 'maintenance',
+      equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-A4', patrimonyNumber: 'PAT-A4', status: 'maintenance',
     });
 
     const res = await request(app)
@@ -163,7 +170,7 @@ describe('PATCH /api/equipment/:id/assign', () => {
 
   it('transfere equipamento já vinculado para outro usuário', async () => {
     const eq = await Equipment.create({
-      equipmentModel: equipmentModelId, serialNumber: 'SN-A5',
+      equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-A5', patrimonyNumber: 'PAT-A5',
       status: 'assigned', assignedTo: userId, assignmentDate: new Date(),
     });
 
@@ -187,29 +194,46 @@ describe('PATCH /api/equipment/:id/assign', () => {
 });
 
 describe('PATCH /api/equipment/:id/unassign', () => {
-  it('desvincula e registra histórico', async () => {
+  it('desvincula, envia ao estoque e registra histórico', async () => {
     const eq = await Equipment.create({
-      equipmentModel: equipmentModelId, serialNumber: 'SN-U1',
+      equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-U1', patrimonyNumber: 'PAT-U1',
       status: 'assigned', assignedTo: userId, assignmentDate: new Date(),
     });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/unassign`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ note: 'Devolvido pelo usuário' });
+      .send({ stockId, note: 'Devolvido pelo usuário' });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.status).toBe('available');
+    expect(res.body.data.status).toBe('in_stock');
     expect(res.body.data.assignedTo).toBeNull();
+    const stockRef = res.body.data.stock;
+    const returnedStockId = typeof stockRef === 'object' ? stockRef._id : stockRef;
+    expect(returnedStockId).toBe(stockId);
 
     const updated = await Equipment.findById(eq._id);
     expect(updated.assignmentHistory).toHaveLength(1);
+  });
+
+  it('rejeita sem stockId', async () => {
+    const eq = await Equipment.create({
+      equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-U2', patrimonyNumber: 'PAT-U2',
+      status: 'assigned', assignedTo: userId, assignmentDate: new Date(),
+    });
+
+    const res = await request(app)
+      .patch(`/api/equipment/${eq._id}/unassign`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ note: 'Sem estoque' });
+
+    expect(res.status).toBe(422);
   });
 });
 
 describe('PATCH /api/equipment/:id/status', () => {
   it('admin altera status para maintenance', async () => {
-    const eq = await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-S1' });
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-S1', patrimonyNumber: 'PAT-S1', status: 'available' });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/status`)
@@ -221,7 +245,7 @@ describe('PATCH /api/equipment/:id/status', () => {
   });
 
   it('rejeita status inválido', async () => {
-    const eq = await Equipment.create({ equipmentModel: equipmentModelId, serialNumber: 'SN-S2' });
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-S2', patrimonyNumber: 'PAT-S2', status: 'available' });
 
     const res = await request(app)
       .patch(`/api/equipment/${eq._id}/status`)
@@ -229,5 +253,17 @@ describe('PATCH /api/equipment/:id/status', () => {
       .send({ status: 'invalido' });
 
     expect(res.status).toBe(422);
+  });
+
+  it('rejeita status gerenciado automaticamente (available)', async () => {
+    const eq = await Equipment.create({ equipmentModel: equipmentModelId, stock: null, serialNumber: 'SN-S3', patrimonyNumber: 'PAT-S3', status: 'maintenance' });
+
+    const res = await request(app)
+      .patch(`/api/equipment/${eq._id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'available' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('STATUS_NOT_ALLOWED');
   });
 });

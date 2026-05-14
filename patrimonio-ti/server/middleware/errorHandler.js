@@ -12,6 +12,7 @@ const errorHandler = (err, req, res, next) => {
     const codeMap = {
       serialNumber:    { code: 'SERIAL_NUMBER_DUPLICATE',    message: 'Número de série já cadastrado.' },
       patrimonyNumber: { code: 'PATRIMONY_NUMBER_DUPLICATE', message: 'Número de patrimônio já cadastrado.' },
+      name:            { code: 'DUPLICATE_NAME',             message: 'Já existe um registro com este nome.' },
     };
     const entry = codeMap[field] ?? { code: 'DUPLICATE_KEY', message: `Valor duplicado para o campo: ${field}` };
     return error(res, entry.message, 409, entry.code);

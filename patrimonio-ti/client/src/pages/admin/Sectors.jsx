@@ -1,14 +1,55 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Trash2, Loader2, Filter, X, Users, Monitor } from 'lucide-react';
+import { Trash2, Loader2, Filter, X, Users, Monitor, Plus, Pencil } from 'lucide-react';
 import PageTitle from '@/components/shared/PageTitle';
+import Modal from '@/components/shared/Modal';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import Pagination from '@/components/shared/Pagination';
 import EmptyState from '@/components/shared/EmptyState';
-import { listSectors, deleteSector } from '@/services/sectorService';
+import { listSectors, createSector, updateSector, deleteSector } from '@/services/sectorService';
 import { useDebounce } from '@/hooks/useDebounce';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/utils/cn';
+
+function SectorForm({ initial, onSubmit, onCancel, loading }) {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    description: initial?.description || '',
+  });
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-4">
+      <div>
+        <label className="label">Nome *</label>
+        <input
+          className="input"
+          value={form.name}
+          onChange={(e) => set('name', e.target.value)}
+          placeholder="Ex: GETIC, RH, Almoxarifado..."
+          required
+          autoFocus
+        />
+      </div>
+      <div>
+        <label className="label">Descrição</label>
+        <textarea
+          className="input resize-none"
+          rows={2}
+          value={form.description}
+          onChange={(e) => set('description', e.target.value)}
+          placeholder="Opcional — nome completo ou observação"
+        />
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
+        <button type="submit" className="btn-primary" disabled={loading || !form.name.trim()}>
+          {loading && <Loader2 size={14} className="animate-spin" />} Salvar
+        </button>
+      </div>
+    </form>
+  );
+}
 
 export default function Sectors() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,6 +67,7 @@ export default function Sectors() {
   const [pagination, setPagination] = useState(null);
   const [stats, setStats]       = useState(null);
   const [loading, setLoading]   = useState(true);
+  const [modal, setModal]       = useState(null);
   const [confirm, setConfirm]   = useState(null);
   const [saving, setSaving]     = useState(false);
 
@@ -90,6 +132,29 @@ export default function Sectors() {
     return next;
   }, { replace: true });
 
+  const handleSave = async (form) => {
+    setSaving(true);
+    try {
+      if (modal.mode === 'create') {
+        await createSector(form);
+        toast.success('Setor criado com sucesso!');
+      } else {
+        await updateSector(modal.item._id, form);
+        toast.success('Setor atualizado.');
+      }
+      setModal(null); load();
+    } catch (err) {
+      const code = err.response?.data?.code;
+      if (code === 'SECTOR_DUPLICATE') {
+        toast.error('Já existe um setor com este nome.');
+      } else if (code === 'SECTOR_AD_MANAGED') {
+        toast.error('Setores do Active Directory não podem ser editados manualmente.');
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao salvar setor.');
+      }
+    } finally { setSaving(false); }
+  };
+
   const handleDelete = async () => {
     setSaving(true);
     try {
@@ -104,11 +169,18 @@ export default function Sectors() {
 
   return (
     <div className="space-y-4">
-      <PageTitle title="Setores" />
+      <PageTitle
+        title="Setores"
+        action={
+          <button className="btn-primary" onClick={() => setModal({ mode: 'create' })}>
+            <Plus size={16} /> Novo Setor
+          </button>
+        }
+      />
 
       <div className="mb-4 rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
-        Os setores são criados e gerenciados automaticamente a partir do Active Directory.
-        Para adicionar um setor, importe os usuários correspondentes via <strong>Usuários → Sincronizar com AD</strong>.
+        Setores podem ser criados manualmente ou automaticamente a partir do Active Directory (via <strong>Usuários → Sincronizar com AD</strong>).
+        Setores do AD não podem ser editados manualmente.
       </div>
 
       {/* Cards de resumo */}
@@ -180,8 +252,9 @@ export default function Sectors() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Gestor</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Usuários</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Equipamentos</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Origem</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Status</th>
-                <th className="px-4 py-3 w-16" />
+                <th className="px-4 py-3 w-20" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -205,12 +278,31 @@ export default function Sectors() {
                     ) : <span className="text-gray-300 text-xs">0</span>}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
+                    <span className={cn(
+                      'badge text-xs',
+                      item.origin === 'manual'
+                        ? 'bg-gray-100 text-gray-600'
+                        : 'bg-blue-100 text-blue-700'
+                    )}>
+                      {item.origin === 'manual' ? 'Manual' : 'AD'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 hidden sm:table-cell">
                     <span className={cn('badge', item.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500')}>
                       {item.isActive ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-1">
+                      {item.origin === 'manual' && (
+                        <button
+                          onClick={() => setModal({ mode: 'edit', item })}
+                          className="p-1.5 text-gray-400 hover:text-primary-600 rounded"
+                          title="Editar"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                       <button onClick={() => setConfirm(item)} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Excluir">
                         <Trash2 size={15} />
                       </button>
@@ -229,6 +321,22 @@ export default function Sectors() {
         </p>
       )}
       <Pagination pagination={pagination} onPageChange={setPage} />
+
+      <Modal
+        open={!!modal}
+        onClose={() => setModal(null)}
+        title={modal?.mode === 'create' ? 'Novo Setor' : 'Editar Setor'}
+        size="sm"
+      >
+        {modal && (
+          <SectorForm
+            initial={modal.item}
+            onSubmit={handleSave}
+            onCancel={() => setModal(null)}
+            loading={saving}
+          />
+        )}
+      </Modal>
 
       <ConfirmDialog
         open={!!confirm}

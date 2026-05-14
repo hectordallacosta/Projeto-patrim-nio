@@ -1,6 +1,8 @@
 const Equipment = require('../models/Equipment');
 const EquipmentModel = require('../models/EquipmentModel');
 const User = require('../models/User');
+const Sector = require('../models/Sector');
+const Stock = require('../models/Stock');
 const auditService = require('./auditService');
 const { paginate, paginationMeta } = require('../utils/pagination');
 
@@ -12,15 +14,22 @@ const POPULATE_FIELDS = [
   },
   { path: 'assignedTo', select: 'displayName username email' },
   { path: 'assignedSector', select: 'name' },
+  { path: 'stock', select: 'name' },
 ];
 
 async function list(query) {
   const { page, limit, skip } = paginate(query);
   const filter = {};
 
-  if (query.status) filter.status = query.status;
+  if (query.status) {
+    filter.status = query.status;
+  } else {
+    // Por padrão, oculta equipamentos em estoque (gerenciados pela aba Estoques)
+    filter.status = { $ne: 'in_stock' };
+  }
   if (query.assignedTo) filter.assignedTo = query.assignedTo;
   if (query.assignedSector) filter.assignedSector = query.assignedSector;
+  if (query.stock) filter.stock = query.stock;
 
   // Filtros que dependem de campos do EquipmentModel (type, search em brand/model/lot)
   if (query.type || query.search) {
@@ -75,7 +84,22 @@ async function getById(id) {
 }
 
 async function create(data, userId, ip) {
-  const equipment = await Equipment.create(data);
+  if (!data.stock) {
+    const err = new Error('Informe o estoque de destino para o equipamento.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const stock = await Stock.findById(data.stock);
+  if (!stock) {
+    const err = new Error('Estoque não encontrado.');
+    err.statusCode = 404;
+    err.code = 'STOCK_NOT_FOUND';
+    throw err;
+  }
+
+  const payload = { ...data, status: 'in_stock', assignedTo: null, assignedSector: null };
+  const equipment = await Equipment.create(payload);
   await auditService.log({
     action: 'CREATE',
     entity: 'Equipment',
@@ -142,6 +166,8 @@ async function assign(id, { assignedTo, assignedSector, note = '' }, userId, ip)
     throw err;
   }
 
+  const fromStock = equipment.status === 'in_stock' ? equipment.stock : null;
+
   if (assignedTo) {
     const targetUser = await User.findById(assignedTo).select('isActive displayName').lean();
     if (!targetUser) {
@@ -168,6 +194,7 @@ async function assign(id, { assignedTo, assignedSector, note = '' }, userId, ip)
       assignedAt: equipment.assignmentDate,
       returnedAt: now,
       note,
+      action: 'assigned',
     });
   }
 
@@ -175,6 +202,8 @@ async function assign(id, { assignedTo, assignedSector, note = '' }, userId, ip)
   equipment.assignedSector = assignedSector || null;
   equipment.assignmentDate = now;
   equipment.status = 'assigned';
+  // Se veio do estoque, zera o campo stock
+  if (fromStock) equipment.stock = null;
 
   await equipment.save();
   await auditService.log({
@@ -191,9 +220,9 @@ async function assign(id, { assignedTo, assignedSector, note = '' }, userId, ip)
 }
 
 /**
- * Remove o vínculo do equipamento e registra no histórico.
+ * Remove o vínculo do equipamento e move para um estoque obrigatório.
  */
-async function unassign(id, note = '', userId, ip) {
+async function unassign(id, { stockId, note = '' }, userId, ip) {
   const equipment = await Equipment.findById(id);
   if (!equipment) {
     const err = new Error('Equipamento não encontrado');
@@ -207,6 +236,14 @@ async function unassign(id, note = '', userId, ip) {
     throw err;
   }
 
+  const stock = await Stock.findById(stockId);
+  if (!stock || !stock.isActive) {
+    const err = new Error('Estoque de destino não encontrado ou inativo.');
+    err.statusCode = 404;
+    err.code = 'STOCK_NOT_FOUND';
+    throw err;
+  }
+
   const before = equipment.toObject();
   const now = new Date();
 
@@ -216,18 +253,87 @@ async function unassign(id, note = '', userId, ip) {
     assignedAt: equipment.assignmentDate,
     returnedAt: now,
     note,
+    action: 'unassigned_to_stock',
   });
 
   equipment.assignedTo = null;
   equipment.assignedSector = null;
   equipment.assignmentDate = null;
-  equipment.status = 'available';
+  equipment.status = 'in_stock';
+  equipment.stock = stockId;
 
   await equipment.save();
   await auditService.log({
     action: 'UNASSIGN',
     entity: 'Equipment',
     entityId: id,
+    performedBy: userId,
+    before,
+    after: equipment.toObject(),
+    ip,
+  });
+
+  return equipment.populate(POPULATE_FIELDS);
+}
+
+/**
+ * Move um equipamento para um estoque, encerrando qualquer vínculo ativo.
+ * Aceita equipamentos com status available, assigned ou in_stock (mudança de estoque).
+ */
+async function sendToStock(equipmentId, stockId, userId, ip) {
+  const equipment = await Equipment.findById(equipmentId);
+  if (!equipment) {
+    const err = new Error('Equipamento não encontrado');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (equipment.status === 'in_stock' && equipment.stock?.toString() === stockId) {
+    const err = new Error('Equipamento já está neste estoque.');
+    err.statusCode = 422;
+    err.code = 'EQUIPMENT_ALREADY_IN_STOCK';
+    throw err;
+  }
+
+  if (equipment.status === 'decommissioned') {
+    const err = new Error('Equipamento baixado (decommissioned) não pode ser movido para estoque.');
+    err.statusCode = 409;
+    err.code = 'EQUIPMENT_UNAVAILABLE';
+    throw err;
+  }
+
+  const stock = await Stock.findById(stockId);
+  if (!stock || !stock.isActive) {
+    const err = new Error('Estoque de destino não encontrado ou inativo.');
+    err.statusCode = 404;
+    err.code = 'STOCK_NOT_FOUND';
+    throw err;
+  }
+
+  const before = equipment.toObject();
+  const now = new Date();
+
+  if (equipment.assignedTo || equipment.assignedSector) {
+    equipment.assignmentHistory.push({
+      assignedTo: equipment.assignedTo,
+      assignedSector: equipment.assignedSector,
+      assignedAt: equipment.assignmentDate,
+      returnedAt: now,
+      action: 'sent_to_stock',
+    });
+  }
+
+  equipment.status = 'in_stock';
+  equipment.stock = stockId;
+  equipment.assignedTo = null;
+  equipment.assignedSector = null;
+  equipment.assignmentDate = null;
+
+  await equipment.save();
+  await auditService.log({
+    action: 'EQUIPMENT_SENT_TO_STOCK',
+    entity: 'Equipment',
+    entityId: equipmentId,
     performedBy: userId,
     before,
     after: equipment.toObject(),
@@ -245,20 +351,94 @@ async function updateStatus(id, status, userId, ip) {
     throw err;
   }
 
-  // Não permite colocar em manutenção/desativado se ainda vinculado
-  if (['maintenance', 'decommissioned'].includes(status) && (equipment.assignedTo || equipment.assignedSector)) {
-    const err = new Error('Desvincule o equipamento antes de alterar o status para ' + status);
+  // decommissioned exige desvinculação prévia; maintenance auto-desvincula
+  if (status === 'decommissioned' && (equipment.assignedTo || equipment.assignedSector)) {
+    const err = new Error('Desvincule o equipamento antes de dar baixa.');
     err.statusCode = 409;
     err.code = 'EQUIPMENT_UNAVAILABLE';
     throw err;
   }
 
   const before = equipment.toObject();
+  const now = new Date();
+
+  // Se em uso, encerra o vínculo ao colocar em manutenção
+  if (status === 'maintenance' && (equipment.assignedTo || equipment.assignedSector)) {
+    equipment.assignmentHistory.push({
+      assignedTo: equipment.assignedTo,
+      assignedSector: equipment.assignedSector,
+      assignedAt: equipment.assignmentDate,
+      returnedAt: now,
+      action: 'sent_to_maintenance',
+    });
+    equipment.assignedTo = null;
+    equipment.assignedSector = null;
+    equipment.assignmentDate = null;
+    equipment.stock = null;
+  }
+
   equipment.status = status;
   await equipment.save();
 
   await auditService.log({
     action: 'STATUS_CHANGE',
+    entity: 'Equipment',
+    entityId: id,
+    performedBy: userId,
+    before,
+    after: equipment.toObject(),
+    ip,
+  });
+
+  return equipment.populate(POPULATE_FIELDS);
+}
+
+/**
+ * Retira o equipamento do estoque, tornando-o disponível no setor informado.
+ */
+async function retrieve(id, sectorId, userId, ip) {
+  const equipment = await Equipment.findById(id);
+  if (!equipment) {
+    const err = new Error('Equipamento não encontrado');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (equipment.status !== 'in_stock') {
+    const err = new Error('Equipamento não está em estoque.');
+    err.statusCode = 422;
+    err.code = 'EQUIPMENT_NOT_IN_STOCK';
+    throw err;
+  }
+
+  const sector = await Sector.findById(sectorId);
+  if (!sector || !sector.isActive) {
+    const err = new Error('Setor não encontrado ou inativo.');
+    err.statusCode = 404;
+    err.code = 'SECTOR_NOT_FOUND';
+    throw err;
+  }
+
+  const before = equipment.toObject();
+  const now = new Date();
+
+  equipment.assignmentHistory.push({
+    assignedTo: null,
+    assignedSector: sectorId,
+    assignedAt: now,
+    returnedAt: now,
+    fromStock: equipment.stock,
+    action: 'retrieved_from_stock',
+  });
+
+  equipment.status = 'available';
+  equipment.assignedSector = sectorId;
+  equipment.stock = null;
+  equipment.assignmentDate = now;
+
+  await equipment.save();
+  await auditService.log({
+    action: 'EQUIPMENT_RETRIEVED',
     entity: 'Equipment',
     entityId: id,
     performedBy: userId,
@@ -287,6 +467,10 @@ async function remove(id, userId, ip) {
     before: equipment,
     ip,
   });
+}
+
+async function getInStockCount() {
+  return Equipment.countDocuments({ status: 'in_stock' });
 }
 
 async function getAssetsBySector() {
@@ -368,4 +552,4 @@ async function getRecentAssignments() {
     .lean();
 }
 
-module.exports = { list, getById, create, update, assign, unassign, updateStatus, remove, getAssetsBySector, getAssetsByType, getModelsBySector, getRecentAssignments };
+module.exports = { list, getById, create, update, assign, unassign, sendToStock, updateStatus, retrieve, remove, getAssetsBySector, getAssetsByType, getModelsBySector, getRecentAssignments, getInStockCount };

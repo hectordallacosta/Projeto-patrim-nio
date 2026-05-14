@@ -13,6 +13,7 @@ export const statusLabel = {
   assigned: 'Atribuído',
   maintenance: 'Manutenção',
   decommissioned: 'Desativado',
+  in_stock: 'Em Estoque',
 };
 
 export const statusColor = {
@@ -20,6 +21,7 @@ export const statusColor = {
   assigned: 'bg-blue-100 text-blue-800',
   maintenance: 'bg-yellow-100 text-yellow-800',
   decommissioned: 'bg-gray-100 text-gray-600',
+  in_stock: 'bg-indigo-100 text-indigo-800',
 };
 
 export const roleLabel = {

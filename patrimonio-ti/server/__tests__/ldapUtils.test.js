@@ -13,10 +13,27 @@ describe('extractSectorAcronym', () => {
     expect(extractSectorAcronym(dn)).toBe('BLUMENAU');
   });
 
+  test('suporta caracteres acentuados portugueses — ç (Joaçaba)', () => {
+    const dn =
+      'CN=pedro,OU=Urss - Joaçaba,OU=Urss SC,OU=Diretoria de Saúde do Servidor,DC=empresa,DC=com,DC=br';
+    expect(extractSectorAcronym(dn)).toBe('JOAÇABA');
+  });
+
   test('percorre os segmentos e usa a primeira OU com padrão " - sigla"', () => {
     const dn =
       'CN=pedro,OU=Gerência de Contabilidade - GECON,OU=Diretoria Financeira - DIFIN,DC=corp,DC=br';
     expect(extractSectorAcronym(dn)).toBe('GECON');
+  });
+
+  test('retorna null quando OU não tem padrão " - SIGLA" (OU sem hífen)', () => {
+    const dn =
+      'CN=ana,OU=Diretoria de Saúde do Servidor,OU=ORGAO,DC=empresa,DC=com,DC=br';
+    expect(extractSectorAcronym(dn)).toBeNull();
+  });
+
+  test('retorna null quando OU é apenas sigla isolada sem nome precedido de hífen', () => {
+    const dn = 'CN=joao,OU=ORGAO,DC=corp,DC=br';
+    expect(extractSectorAcronym(dn)).toBeNull();
   });
 
   test('retorna null quando nenhum segmento OU tem o padrão', () => {
@@ -40,6 +57,12 @@ describe('extractSectorFullName', () => {
   test('retorna o nome completo antes do hífen (texto misto após hífen)', () => {
     const dn =
       'CN=maria,OU=Urss - Blumenau,OU=Urss SC,OU=Diretoria de Saúde do Servidor,DC=empresa,DC=com,DC=br';
+    expect(extractSectorFullName(dn)).toBe('Urss');
+  });
+
+  test('retorna o nome completo quando sigla tem acento (Joaçaba)', () => {
+    const dn =
+      'CN=pedro,OU=Urss - Joaçaba,OU=Urss SC,DC=empresa,DC=com,DC=br';
     expect(extractSectorFullName(dn)).toBe('Urss');
   });
 

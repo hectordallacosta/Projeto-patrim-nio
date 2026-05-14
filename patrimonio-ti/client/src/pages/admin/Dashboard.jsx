@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Monitor, UserCheck, Wrench, Users } from 'lucide-react';
+import { Monitor, UserCheck, Wrench, Users, Warehouse } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, PieChart, Pie, Legend,
@@ -82,12 +82,14 @@ export default function Dashboard() {
       listEquipment({ limit: 1 }),
       listEquipment({ limit: 1, status: 'assigned' }),
       listEquipment({ limit: 1, status: 'maintenance' }),
+      listEquipment({ limit: 1, status: 'in_stock' }),
       listUsers({ limit: 1 }),
-    ]).then(([all, assigned, maintenance, users]) => {
+    ]).then(([all, assigned, maintenance, inStock, users]) => {
       setStats({
         total: all.pagination?.total,
         assigned: assigned.pagination?.total,
         maintenance: maintenance.pagination?.total,
+        in_stock: inStock.pagination?.total,
         users: users.pagination?.total,
       });
     }).finally(() => setLoadingStats(false));
@@ -120,9 +122,10 @@ export default function Dashboard() {
       <PageTitle title="Dashboard" subtitle="Visão geral do patrimônio de TI" />
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Monitor}   label="Total de Equipamentos" value={loadingStats ? '…' : stats.total}       color="bg-primary-600" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard icon={Monitor}   label="Ativos em Uso"          value={loadingStats ? '…' : stats.total}       color="bg-primary-600" />
         <StatCard icon={UserCheck} label="Atribuídos"            value={loadingStats ? '…' : stats.assigned}    color="bg-green-500" />
+        <StatCard icon={Warehouse} label="Em Estoque"            value={loadingStats ? '…' : stats.in_stock}    color="bg-indigo-500" />
         <StatCard icon={Wrench}    label="Em Manutenção"         value={loadingStats ? '…' : stats.maintenance} color="bg-yellow-500" />
         <StatCard icon={Users}     label="Usuários"              value={loadingStats ? '…' : stats.users}       color="bg-purple-500" />
       </div>

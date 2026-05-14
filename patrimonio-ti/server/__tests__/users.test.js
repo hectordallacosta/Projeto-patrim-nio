@@ -3,12 +3,14 @@ const mongoose = require('mongoose');
 const app = require('../app');
 const ldapService = require('../services/ldapService');
 const User = require('../models/User');
+const Sector = require('../models/Sector');
 const Equipment = require('../models/Equipment');
 const EquipmentType = require('../models/EquipmentType');
+const EquipmentModel = require('../models/EquipmentModel');
 
 jest.mock('../services/ldapService');
 
-const MONGO_URI = 'mongodb://localhost:27017/patrimonio_ti_test';
+const MONGO_URI = 'mongodb://localhost:27018/patrimonio_ti_test';
 
 let adminToken;
 let userToken;
@@ -41,6 +43,8 @@ afterAll(async () => {
   await User.deleteMany({});
   await Equipment.deleteMany({});
   await EquipmentType.deleteMany({});
+  await EquipmentModel.deleteMany({});
+  await Sector.deleteMany({});
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
 });
@@ -95,9 +99,14 @@ describe('GET /api/users/:id', () => {
 describe('GET /api/users/me/equipment', () => {
   it('retorna equipamentos do usuário logado', async () => {
     const et = await EquipmentType.create({ name: 'Desktop' });
+    const em = await EquipmentModel.create({ type: et._id, brand: 'Dell', model: 'OptiPlex', isActive: true });
     await Equipment.create({
-      type: et._id, brand: 'Dell', model: 'OptiPlex', serialNumber: 'SN-ME-01',
-      status: 'assigned', assignedTo: userId, assignmentDate: new Date(),
+      equipmentModel: em._id,
+      patrimonyNumber: 'PAT-ME-01',
+      serialNumber: 'SN-ME-01',
+      status: 'assigned',
+      assignedTo: userId,
+      assignmentDate: new Date(),
     });
 
     const res = await request(app)
@@ -108,6 +117,7 @@ describe('GET /api/users/me/equipment', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
 
     await Equipment.deleteMany({});
+    await EquipmentModel.deleteMany({});
     await EquipmentType.deleteMany({});
   });
 });
@@ -171,6 +181,76 @@ describe('POST /api/users/sync/:username', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('USER_NOT_FOUND_AD');
+  });
+
+  it('atualiza sector quando DN muda no AD (AD é fonte da verdade)', async () => {
+    ldapService.findUser.mockResolvedValue({
+      username: 'troca.setor',
+      email: 'troca@emp.com',
+      displayName: 'Troca Setor',
+      adDepartment: 'TI',
+      distinguishedName: 'CN=Troca Setor,OU=Gerência de TI - GETIC,DC=emp,DC=com',
+    });
+    await request(app)
+      .post('/api/users/sync/troca.setor')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const userBefore = await User.findOne({ username: 'troca.setor' }).populate('sector');
+    expect(userBefore.sector).toBeDefined();
+    const firstSectorId = userBefore.sector._id.toString();
+    expect(userBefore.sector.name).toBe('GETIC');
+
+    ldapService.findUser.mockResolvedValue({
+      username: 'troca.setor',
+      email: 'troca@emp.com',
+      displayName: 'Troca Setor',
+      adDepartment: 'RH',
+      distinguishedName: 'CN=Troca Setor,OU=Recursos Humanos - RH,DC=emp,DC=com',
+    });
+    await request(app)
+      .post('/api/users/sync/troca.setor')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const userAfter = await User.findOne({ username: 'troca.setor' }).populate('sector');
+    expect(userAfter.sector._id.toString()).not.toBe(firstSectorId);
+    expect(userAfter.sector.name).toBe('RH');
+
+    await User.deleteOne({ username: 'troca.setor' });
+    await Sector.deleteMany({ name: { $in: ['GETIC', 'RH'] } });
+  });
+
+  it('não sobrescreve sector quando DN não contém padrão de sigla', async () => {
+    ldapService.findUser.mockResolvedValue({
+      username: 'dn.sem.sigla',
+      email: 'dnsemsigla@emp.com',
+      displayName: 'DN Sem Sigla',
+      adDepartment: 'TI',
+      distinguishedName: 'CN=DN Sem Sigla,OU=Gerência de TI - INFRA,DC=emp,DC=com',
+    });
+    await request(app)
+      .post('/api/users/sync/dn.sem.sigla')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const userBefore = await User.findOne({ username: 'dn.sem.sigla' }).populate('sector');
+    expect(userBefore.sector.name).toBe('INFRA');
+    const sectorId = userBefore.sector._id.toString();
+
+    ldapService.findUser.mockResolvedValue({
+      username: 'dn.sem.sigla',
+      email: 'dnsemsigla@emp.com',
+      displayName: 'DN Sem Sigla',
+      adDepartment: 'TI',
+      distinguishedName: 'CN=DN Sem Sigla,OU=GenericOU,DC=emp,DC=com',
+    });
+    await request(app)
+      .post('/api/users/sync/dn.sem.sigla')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const userAfter = await User.findOne({ username: 'dn.sem.sigla' }).populate('sector');
+    expect(userAfter.sector._id.toString()).toBe(sectorId);
+
+    await User.deleteOne({ username: 'dn.sem.sigla' });
+    await Sector.deleteMany({ name: 'INFRA' });
   });
 });
 

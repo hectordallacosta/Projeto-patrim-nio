@@ -9,7 +9,7 @@ const Equipment = require('../models/Equipment');
 
 jest.mock('../services/ldapService');
 
-const MONGO_URI = 'mongodb://localhost:27017/patrimonio_ti_test';
+const MONGO_URI = 'mongodb://localhost:27018/patrimonio_ti_test';
 
 let adminToken;
 let userToken;
@@ -136,8 +136,8 @@ describe('GET /api/equipment-models', () => {
 
   it('inclui contagem de equipamentos vinculados', async () => {
     const em = await EquipmentModel.create({ type: equipmentTypeId, brand: 'Dell', model: 'OptiPlex' });
-    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-COUNT-01' });
-    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-COUNT-02' });
+    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-COUNT-01', patrimonyNumber: 'PAT-COUNT-01' });
+    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-COUNT-02', patrimonyNumber: 'PAT-COUNT-02' });
 
     const res = await request(app)
       .get('/api/equipment-models')
@@ -236,7 +236,7 @@ describe('DELETE /api/equipment-models/:id', () => {
 
   it('bloqueia exclusão de modelo com equipamentos vinculados', async () => {
     const em = await EquipmentModel.create({ type: equipmentTypeId, brand: 'Dell', model: 'OptiPlex' });
-    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-DEL-01' });
+    await Equipment.create({ equipmentModel: em._id, serialNumber: 'SN-DEL-01', patrimonyNumber: 'PAT-DEL-01' });
 
     const res = await request(app)
       .delete(`/api/equipment-models/${em._id}`)

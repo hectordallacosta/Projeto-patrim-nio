@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  Plus, Pencil, Trash2, Link, Unlink, Settings, Loader2,
+  Trash2, Link, Unlink, Loader2, Wrench, PackagePlus,
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter, ArrowRightLeft,
 } from 'lucide-react';
 import PageTitle from '@/components/shared/PageTitle';
@@ -10,11 +10,12 @@ import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import Pagination from '@/components/shared/Pagination';
 import StatusBadge from '@/components/shared/StatusBadge';
 import EmptyState from '@/components/shared/EmptyState';
+import UnassignForm from '@/components/shared/UnassignForm';
+import SendToStockForm from '@/components/shared/SendToStockForm';
 import {
-  listEquipment, createEquipment, updateEquipment,
-  assignEquipment, unassignEquipment, changeEquipmentStatus, deleteEquipment,
+  listEquipment,
+  assignEquipment, unassignEquipment, sendEquipmentToStock, changeEquipmentStatus, deleteEquipment,
 } from '@/services/equipmentService';
-import { listAllEquipmentModels } from '@/services/equipmentModelService';
 import { listEquipmentTypes } from '@/services/equipmentTypeService';
 import { listUsers } from '@/services/userService';
 import { listSectors } from '@/services/sectorService';
@@ -25,8 +26,6 @@ import { cn } from '@/utils/cn';
 
 const STATUS_OPTIONS = ['available', 'assigned', 'maintenance', 'decommissioned'];
 const STATUS_CARD_COLOR = {
-  available:     'border-green-200 bg-green-50 text-green-700',
-  assigned:      'border-blue-200 bg-blue-50 text-blue-700',
   maintenance:   'border-yellow-200 bg-yellow-50 text-yellow-700',
   decommissioned:'border-gray-200 bg-gray-50 text-gray-600',
 };
@@ -80,103 +79,6 @@ function Autocomplete({ items, value, onChange, getLabel, placeholder }) {
         </div>
       )}
     </div>
-  );
-}
-
-// ---------- EquipmentForm ----------
-function EquipmentForm({ initial, equipmentModels, onSubmit, onCancel, loading }) {
-  const [form, setForm] = useState({
-    equipmentModel: '',
-    serialNumber: '',
-    patrimonyNumber: '',
-    notes: '',
-    ...initial,
-    equipmentModel: initial?.equipmentModel?._id || initial?.equipmentModel || '',
-    patrimonyNumber: initial?.patrimonyNumber || '',
-  });
-  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
-  const selectedModel = equipmentModels.find((m) => m._id === form.equipmentModel);
-
-  const modelLabel = (m) => {
-    let label = `${m.brand} ${m.model}`;
-    if (m.lot) label += ` — ${m.lot}`;
-    return label;
-  };
-
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-4">
-      {/* Seleção do modelo */}
-      <div>
-        <label className="label">Modelo *</label>
-        <Autocomplete
-          items={equipmentModels}
-          value={form.equipmentModel}
-          onChange={(id) => set('equipmentModel', id)}
-          getLabel={modelLabel}
-          placeholder="Selecione o modelo de equipamento..."
-        />
-      </div>
-
-      {/* Informações herdadas do modelo (somente leitura) */}
-      {selectedModel && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm space-y-1">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Dados herdados do modelo</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-blue-800">
-            <span><span className="text-blue-500 text-xs">Tipo:</span> {selectedModel.type?.name || '—'}</span>
-            <span><span className="text-blue-500 text-xs">Marca:</span> {selectedModel.brand}</span>
-            <span><span className="text-blue-500 text-xs">Modelo:</span> {selectedModel.model}</span>
-            {selectedModel.lot && <span><span className="text-blue-500 text-xs">Lote:</span> {selectedModel.lot}</span>}
-            {selectedModel.warrantyExpiry && (
-              <span><span className="text-blue-500 text-xs">Garantia até:</span> {formatDate(selectedModel.warrantyExpiry)}</span>
-            )}
-            {selectedModel.purchaseDate && (
-              <span><span className="text-blue-500 text-xs">Compra:</span> {formatDate(selectedModel.purchaseDate)}</span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Campos individuais do equipamento */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="label">Nº Série</label>
-          <input
-            className="input font-mono"
-            value={form.serialNumber}
-            onChange={(e) => set('serialNumber', e.target.value)}
-            placeholder="Ex: 1A2B3C4D"
-          />
-        </div>
-        <div>
-          <label className="label">Nº Patrimônio *</label>
-          <input
-            className="input font-mono"
-            value={form.patrimonyNumber}
-            onChange={(e) => set('patrimonyNumber', e.target.value)}
-            placeholder="Ex: 001234"
-            required
-          />
-        </div>
-        <div className="col-span-2">
-          <label className="label">Observações específicas deste equipamento</label>
-          <textarea
-            className="input resize-none"
-            rows={2}
-            value={form.notes}
-            onChange={(e) => set('notes', e.target.value)}
-            placeholder="Opcional — informações particulares deste ativo"
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
-        <button type="submit" className="btn-primary" disabled={loading || !form.equipmentModel || !form.patrimonyNumber}>
-          {loading && <Loader2 size={14} className="animate-spin" />} Salvar
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -354,39 +256,19 @@ function AssignForm({ equipment, sectors, onSubmit, onCancel, loading }) {
   );
 }
 
-// ---------- StatusForm ----------
-function StatusForm({ current, onSubmit, onCancel, loading }) {
-  const [status, setStatus] = useState(current);
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(status); }} className="space-y-4">
-      <div>
-        <label className="label">Novo Status</label>
-        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}
-        </select>
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
-        <button type="submit" className="btn-primary" disabled={loading}>
-          {loading && <Loader2 size={14} className="animate-spin" />} Confirmar
-        </button>
-      </div>
-    </form>
-  );
-}
-
 // ---------- Page ----------
 export default function Equipment() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const search  = searchParams.get('search') || '';
-  const status  = searchParams.get('status') || '';
-  const typeId  = searchParams.get('type') || '';
-  const sectorId= searchParams.get('sector') || '';
-  const sort    = searchParams.get('sort') || 'createdAt';
-  const sortDir = searchParams.get('sortDir') || 'desc';
-  const page    = parseInt(searchParams.get('page') || '1');
-  const limit   = parseInt(searchParams.get('limit') || '20');
+  const search   = searchParams.get('search') || '';
+  const status   = searchParams.get('status') || '';
+  const typeId   = searchParams.get('type') || '';
+  const sectorId = searchParams.get('sector') || '';
+  const sort     = searchParams.get('sort') || 'createdAt';
+  const sortDir  = searchParams.get('sortDir') || 'desc';
+  const page     = parseInt(searchParams.get('page') || '1');
+  const limit    = parseInt(searchParams.get('limit') || '20');
 
   const [searchInput, setSearchInput] = useState(search);
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -396,9 +278,8 @@ export default function Equipment() {
   const [stats, setStats]       = useState(null);
   const [loading, setLoading]   = useState(true);
   const [types, setTypes]       = useState([]);
-  const [equipmentModels, setEquipmentModels] = useState([]);
   const [sectors, setSectors]   = useState([]);
-  const [modal, setModal]       = useState(null);
+  const [modal, setModal]       = useState(null); // modes: assign, unassign, sendToStock
   const [confirm, setConfirm]   = useState(null);
   const [saving, setSaving]     = useState(false);
 
@@ -463,15 +344,11 @@ export default function Equipment() {
   useEffect(() => {
     Promise.all([
       listEquipment({ limit: 1 }),
-      listEquipment({ limit: 1, status: 'available' }),
-      listEquipment({ limit: 1, status: 'assigned' }),
       listEquipment({ limit: 1, status: 'maintenance' }),
       listEquipment({ limit: 1, status: 'decommissioned' }),
-    ]).then(([all, av, as, mt, dc]) => {
+    ]).then(([all, mt, dc]) => {
       setStats({
         total:         all.pagination.total,
-        available:     av.pagination.total,
-        assigned:      as.pagination.total,
         maintenance:   mt.pagination.total,
         decommissioned:dc.pagination.total,
       });
@@ -480,7 +357,6 @@ export default function Equipment() {
 
   useEffect(() => {
     listEquipmentTypes().then(setTypes);
-    listAllEquipmentModels().then(setEquipmentModels);
     listSectors({ limit: 200 }).then((r) => setSectors(r.data));
   }, []);
 
@@ -489,29 +365,6 @@ export default function Equipment() {
     next.set('page', String(p));
     return next;
   }, { replace: true });
-
-  const handleSave = async (form) => {
-    setSaving(true);
-    try {
-      if (modal.mode === 'create') {
-        await createEquipment(form);
-        toast.success('Equipamento cadastrado com sucesso!');
-      } else {
-        await updateEquipment(modal.item._id, form);
-        toast.success('Equipamento atualizado.');
-      }
-      setModal(null); load();
-    } catch (err) {
-      const code = err.response?.data?.code;
-      if (code === 'PATRIMONY_NUMBER_DUPLICATE') {
-        toast.error('Número de patrimônio já está em uso por outro equipamento.');
-      } else if (code === 'SERIAL_NUMBER_DUPLICATE') {
-        toast.error('Número de série já está em uso por outro equipamento.');
-      } else {
-        toast.error(err.response?.data?.message || 'Erro ao salvar.');
-      }
-    } finally { setSaving(false); }
-  };
 
   const handleAssign = async (form) => {
     setSaving(true);
@@ -530,26 +383,43 @@ export default function Equipment() {
     } finally { setSaving(false); }
   };
 
-  const handleUnassign = async () => {
+  const handleUnassign = async ({ stockId }) => {
     setSaving(true);
     try {
-      await unassignEquipment(confirm.item._id, '');
-      toast.success('Equipamento desvinculado.');
-      setConfirm(null); load();
+      await unassignEquipment(modal.item._id, { stockId });
+      const stockName = modal.item.__stockName || 'estoque selecionado';
+      toast.success(`Equipamento desatribuído e movido para o ${stockName}.`);
+      setModal(null); load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Erro ao desvincular.');
-      setConfirm(null);
     } finally { setSaving(false); }
   };
 
-  const handleStatus = async (s) => {
+  const handleSendToStock = async (stockId) => {
     setSaving(true);
     try {
-      await changeEquipmentStatus(modal.item._id, s);
-      toast.success(`Status alterado para "${statusLabel[s]}".`);
+      await sendEquipmentToStock(modal.item._id, stockId);
+      toast.success('Equipamento movido para o estoque com sucesso!');
       setModal(null); load();
     } catch (err) {
+      const code = err.response?.data?.code;
+      if (code === 'EQUIPMENT_ALREADY_IN_STOCK') {
+        toast.error('O equipamento já está neste estoque.');
+      } else {
+        toast.error(err.response?.data?.message || 'Erro ao mover para estoque.');
+      }
+    } finally { setSaving(false); }
+  };
+
+  const handleMarkMaintenance = async () => {
+    setSaving(true);
+    try {
+      await changeEquipmentStatus(confirm.item._id, 'maintenance');
+      toast.success('Equipamento marcado para manutenção.');
+      setConfirm(null); load();
+    } catch (err) {
       toast.error(err.response?.data?.message || 'Erro ao alterar status.');
+      setConfirm(null);
     } finally { setSaving(false); }
   };
 
@@ -586,25 +456,16 @@ export default function Equipment() {
 
   return (
     <div className="space-y-4">
-      <PageTitle
-        title="Equipamentos"
-        action={
-          <button className="btn-primary" onClick={() => setModal({ mode: 'create' })}>
-            <Plus size={16} /> Novo Equipamento
-          </button>
-        }
-      />
+      <PageTitle title="Ativos em Uso" />
 
       {/* Cards de resumo */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {[
-            { key: null,            label: 'Total',      value: stats.total,          cls: 'border-gray-200 bg-white text-gray-700' },
-            { key: 'available',     label: 'Disponível', value: stats.available,      cls: STATUS_CARD_COLOR.available },
-            { key: 'assigned',      label: 'Atribuído',  value: stats.assigned,       cls: STATUS_CARD_COLOR.assigned },
+            { key: null,            label: 'Total',      value: stats.total,          cls: 'border-gray-200 bg-white text-gray-700', note: 'Excluindo itens em estoque' },
             { key: 'maintenance',   label: 'Manutenção', value: stats.maintenance,    cls: STATUS_CARD_COLOR.maintenance },
             { key: 'decommissioned',label: 'Desativado', value: stats.decommissioned, cls: STATUS_CARD_COLOR.decommissioned },
-          ].map(({ key, label, value, cls }) => (
+          ].map(({ key, label, value, cls, note }) => (
             <button
               key={label}
               onClick={() => setParam('status', key === status ? '' : key)}
@@ -616,6 +477,7 @@ export default function Equipment() {
             >
               <p className="text-2xl font-bold">{value}</p>
               <p className="text-xs font-medium mt-0.5 opacity-80">{label}</p>
+              {note && <p className="text-xs opacity-50 mt-0.5">{note}</p>}
             </button>
           ))}
         </div>
@@ -658,8 +520,12 @@ export default function Equipment() {
           <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-600" size={24} /></div>
         ) : data.length === 0 ? (
           <EmptyState
-            message={activeCount > 0 ? 'Nenhum equipamento encontrado com esses filtros.' : 'Nenhum equipamento cadastrado.'}
-            action={activeCount > 0 ? <button className="btn-secondary mt-3" onClick={clearFilters}>Limpar filtros</button> : null}
+            message={activeCount > 0 ? 'Nenhum ativo encontrado com esses filtros.' : 'Nenhum ativo em uso no momento.'}
+            subtext={activeCount === 0 ? 'Para adicionar equipamentos, acesse a aba Estoques e cadastre os itens lá.' : undefined}
+            action={activeCount > 0
+              ? <button className="btn-secondary mt-3" onClick={clearFilters}>Limpar filtros</button>
+              : <button className="btn-secondary mt-3" onClick={() => navigate('/admin/stocks')}>Ir para Estoques</button>
+            }
           />
         ) : (
           <table className="w-full text-sm">
@@ -672,7 +538,7 @@ export default function Equipment() {
                 <Th field="status">Status</Th>
                 <Th className="hidden xl:table-cell">Vinculado a</Th>
                 <Th className="hidden xl:table-cell">Lote</Th>
-                <th className="px-4 py-3 w-32" />
+                <th className="px-4 py-3 w-28" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -691,28 +557,32 @@ export default function Equipment() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <button onClick={() => setModal({ mode: 'edit', item })} className="p-1.5 text-gray-400 hover:text-primary-600 rounded" title="Editar">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => setModal({ mode: 'status', item })} className="p-1.5 text-gray-400 hover:text-yellow-600 rounded" title="Alterar status">
-                        <Settings size={14} />
-                      </button>
-                      {item.assignedTo || item.assignedSector ? (
+                      {item.status === 'maintenance' ? (
+                        <button onClick={() => setModal({ mode: 'sendToStock', item })} className="p-1.5 text-gray-400 hover:text-green-600 rounded" title="Concluir manutenção e enviar para estoque">
+                          <PackagePlus size={14} />
+                        </button>
+                      ) : item.assignedTo || item.assignedSector ? (
                         <>
                           <button onClick={() => setModal({ mode: 'assign', item })} className="p-1.5 text-gray-400 hover:text-blue-600 rounded" title="Transferir">
                             <ArrowRightLeft size={14} />
                           </button>
-                          <button onClick={() => setConfirm({ action: 'unassign', item })} className="p-1.5 text-gray-400 hover:text-orange-600 rounded" title="Desvincular">
+                          <button onClick={() => setModal({ mode: 'unassign', item })} className="p-1.5 text-gray-400 hover:text-orange-600 rounded" title="Desatribuir para estoque">
                             <Unlink size={14} />
                           </button>
+                          <button onClick={() => setConfirm({ action: 'maintenance', item })} className="p-1.5 text-gray-400 hover:text-yellow-600 rounded" title="Marcar para manutenção">
+                            <Wrench size={14} />
+                          </button>
                         </>
-                      ) : (
-                        item.status === 'available' && (
+                      ) : item.status === 'available' ? (
+                        <>
                           <button onClick={() => setModal({ mode: 'assign', item })} className="p-1.5 text-gray-400 hover:text-blue-600 rounded" title="Vincular">
                             <Link size={14} />
                           </button>
-                        )
-                      )}
+                          <button onClick={() => setModal({ mode: 'sendToStock', item })} className="p-1.5 text-gray-400 hover:text-indigo-600 rounded" title="Mover para Estoque">
+                            <PackagePlus size={14} />
+                          </button>
+                        </>
+                      ) : null}
                       <button onClick={() => setConfirm({ action: 'delete', item })} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Excluir">
                         <Trash2 size={14} />
                       </button>
@@ -728,7 +598,7 @@ export default function Equipment() {
       {pagination && (
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>
-            Exibindo {(page - 1) * limit + 1}–{Math.min(page * limit, pagination.total)} de {pagination.total} equipamentos
+            Exibindo {(page - 1) * limit + 1}–{Math.min(page * limit, pagination.total)} de {pagination.total} ativos em uso
           </span>
           <div className="flex items-center gap-2">
             <span>Por página:</span>
@@ -751,23 +621,6 @@ export default function Equipment() {
 
       {/* Modais */}
       <Modal
-        open={modal?.mode === 'create' || modal?.mode === 'edit'}
-        onClose={() => setModal(null)}
-        title={modal?.mode === 'create' ? 'Novo Equipamento' : 'Editar Equipamento'}
-        size="lg"
-      >
-        {(modal?.mode === 'create' || modal?.mode === 'edit') && (
-          <EquipmentForm
-            initial={modal.item}
-            equipmentModels={equipmentModels}
-            onSubmit={handleSave}
-            onCancel={() => setModal(null)}
-            loading={saving}
-          />
-        )}
-      </Modal>
-
-      <Modal
         open={modal?.mode === 'assign'}
         onClose={() => setModal(null)}
         title={modal?.item?.assignedTo || modal?.item?.assignedSector ? 'Transferir Equipamento' : 'Vincular Equipamento'}
@@ -783,20 +636,37 @@ export default function Equipment() {
         )}
       </Modal>
 
-      <Modal open={modal?.mode === 'status'} onClose={() => setModal(null)} title="Alterar Status" size="sm">
-        {modal?.mode === 'status' && (
-          <StatusForm current={modal.item.status} onSubmit={handleStatus} onCancel={() => setModal(null)} loading={saving} />
+      <Modal open={modal?.mode === 'unassign'} onClose={() => setModal(null)} title="Desatribuir Equipamento" size="sm">
+        {modal?.mode === 'unassign' && (
+          <UnassignForm
+            equipment={modal.item}
+            onSubmit={handleUnassign}
+            onCancel={() => setModal(null)}
+            loading={saving}
+          />
+        )}
+      </Modal>
+
+      <Modal open={modal?.mode === 'sendToStock'} onClose={() => setModal(null)} title={modal?.item?.status === 'maintenance' ? 'Concluir Manutenção' : 'Mover para Estoque'} size="sm">
+        {modal?.mode === 'sendToStock' && (
+          <SendToStockForm
+            equipment={modal.item}
+            onSubmit={handleSendToStock}
+            onCancel={() => setModal(null)}
+            loading={saving}
+          />
         )}
       </Modal>
 
       <ConfirmDialog
-        open={confirm?.action === 'unassign'}
+        open={confirm?.action === 'maintenance'}
         onClose={() => setConfirm(null)}
-        onConfirm={handleUnassign}
-        title="Desvincular Equipamento"
-        message={`Desvincular "${equipName(confirm?.item || {})}" de ${confirm?.item?.assignedTo?.displayName || confirm?.item?.assignedSector?.name}? O histórico será registrado.`}
+        onConfirm={handleMarkMaintenance}
+        title="Marcar para Manutenção"
+        message={`Deseja marcar "${equipName(confirm?.item || {})}" como Em Manutenção? Ele ficará indisponível para atribuição.`}
         loading={saving}
       />
+
       <ConfirmDialog
         open={confirm?.action === 'delete'}
         onClose={() => setConfirm(null)}

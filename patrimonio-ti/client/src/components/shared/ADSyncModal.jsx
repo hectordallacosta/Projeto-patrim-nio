@@ -1,10 +1,153 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Search, UserCheck, RefreshCw, AlertTriangle, Building2 } from 'lucide-react';
+import { Loader2, Search, UserCheck, RefreshCw, AlertTriangle, Building2, ChevronDown, ChevronUp, Users, FolderPlus } from 'lucide-react';
 import Modal from './Modal';
 import { useDebounce } from '@/hooks/useDebounce';
 import { searchADUsers, importUsersFromAD, syncADBulk } from '@/services/userService';
+import { listAllSavedOUs } from '@/services/savedOUService';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/utils/cn';
+import { formatDateTime } from '@/utils/formatters';
+
+// ---------- Seção de resultado detalhado ----------
+function CollapsibleSection({ title, count, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100"
+      >
+        <span>{title} {count !== undefined && <span className="text-gray-400 font-normal">({count})</span>}</span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {open && <div className="px-3 py-2">{children}</div>}
+    </div>
+  );
+}
+
+function SyncResult({ result }) {
+  const hasErrors = result.errors?.length > 0;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-semibold text-gray-800">Sincronização concluída</p>
+
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+        {result.total !== undefined && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
+            <p className="text-lg font-bold text-gray-700">{result.total}</p>
+            <p className="text-gray-500">Total</p>
+          </div>
+        )}
+        <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-center">
+          <p className="text-lg font-bold text-green-700">{result.imported ?? 0}</p>
+          <p className="text-green-600">Novos</p>
+        </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center">
+          <p className="text-lg font-bold text-blue-700">{result.updated ?? 0}</p>
+          <p className="text-blue-600">Atualizados</p>
+        </div>
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-center">
+          <p className="text-lg font-bold text-indigo-700">{result.sectorsCreated ?? 0}</p>
+          <p className="text-indigo-600">Novos Setores</p>
+        </div>
+        <div className={cn('rounded-lg border px-3 py-2 text-center', hasErrors ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50')}>
+          <p className={cn('text-lg font-bold', hasErrors ? 'text-red-700' : 'text-gray-400')}>{result.errors?.length ?? 0}</p>
+          <p className={hasErrors ? 'text-red-600' : 'text-gray-400'}>Erros</p>
+        </div>
+      </div>
+
+      {/* Novos usuários */}
+      {(result.importedUsers?.length > 0 || result.imported === 0) && (
+        <CollapsibleSection
+          title="Novos usuários importados"
+          count={result.importedUsers?.length ?? 0}
+          defaultOpen={(result.importedUsers?.length ?? 0) > 0}
+        >
+          {!result.importedUsers?.length ? (
+            <p className="text-xs text-gray-400">Nenhum usuário novo nesta sincronização.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-gray-500"><th className="text-left py-1">Username</th><th className="text-left py-1">Nome</th><th className="text-left py-1">Setor</th></tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.importedUsers.map((u) => (
+                    <tr key={u.username}>
+                      <td className="py-1 font-mono text-gray-600">{u.username}</td>
+                      <td className="py-1 text-gray-800">{u.displayName}</td>
+                      <td className="py-1 text-gray-500">{u.sector || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CollapsibleSection>
+      )}
+
+      {/* Novos setores */}
+      {result.newSectors !== undefined && (
+        <CollapsibleSection
+          title="Novos setores criados"
+          count={result.newSectors.length}
+          defaultOpen={result.newSectors.length > 0}
+        >
+          {result.newSectors.length === 0 ? (
+            <p className="text-xs text-gray-400">Nenhum setor novo nesta sincronização.</p>
+          ) : (
+            <ul className="space-y-1">
+              {result.newSectors.map((s) => (
+                <li key={s.name} className="text-xs">
+                  <span className="font-medium text-gray-800">{s.name}</span>
+                  {s.description && s.description !== s.name && (
+                    <span className="text-gray-400 ml-1">— {s.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CollapsibleSection>
+      )}
+
+      {/* Usuários atualizados */}
+      {result.updatedUsers !== undefined && (
+        <CollapsibleSection title="Usuários atualizados" count={result.updatedUsers.length} defaultOpen={false}>
+          {result.updatedUsers.length === 0 ? (
+            <p className="text-xs text-gray-400">Nenhum usuário atualizado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-gray-500"><th className="text-left py-1">Username</th><th className="text-left py-1">Nome</th><th className="text-left py-1">Setor</th></tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.updatedUsers.map((u) => (
+                    <tr key={u.username}>
+                      <td className="py-1 font-mono text-gray-600">{u.username}</td>
+                      <td className="py-1 text-gray-800">{u.displayName}</td>
+                      <td className="py-1 text-gray-500">{u.sector || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CollapsibleSection>
+      )}
+
+      {/* Erros */}
+      {hasErrors && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <p className="text-xs font-medium text-red-700 mb-1">{result.errors.length} erro(s):</p>
+          <ul className="space-y-0.5">
+            {result.errors.map((e) => (
+              <li key={e.username} className="text-xs text-red-600">{e.username}: {e.error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------- Aba: Buscar por nome ----------
 function SearchTab({ onImported }) {
@@ -101,23 +244,7 @@ function SearchTab({ onImported }) {
         <p className="text-xs text-gray-400 text-center">Digite ao menos 2 caracteres para buscar.</p>
       )}
 
-      {importSummary && (
-        <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
-          <p className="font-semibold text-green-800 mb-1">Importação concluída</p>
-          <ul className="text-green-700 space-y-0.5">
-            <li>{importSummary.imported} usuário(s) novo(s) importado(s)</li>
-            <li>{importSummary.updated} usuário(s) atualizado(s)</li>
-            {importSummary.sectorsCreated > 0 && (
-              <li className="text-blue-600">{importSummary.sectorsCreated} setor(es) criado(s) automaticamente a partir do AD</li>
-            )}
-            {importSummary.errors.length > 0 && (
-              <li className="text-red-600">
-                {importSummary.errors.length} erro(s): {importSummary.errors.map((e) => e.username).join(', ')}
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
+      {importSummary && <SyncResult result={importSummary} />}
 
       {results.length > 0 && (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -189,18 +316,39 @@ function SearchTab({ onImported }) {
 
 // ---------- Aba: Importar por OU ----------
 function OUSyncTab({ onImported }) {
-  const [ouPath, setOuPath] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [adError, setAdError] = useState('');
+  const [savedOUs, setSavedOUs]       = useState([]);
+  const [selectedOU, setSelectedOU]   = useState(null);
+  const [ouSearch, setOuSearch]       = useState('');
+  const [ouPath, setOuPath]           = useState('');
+  const [manualMode, setManualMode]   = useState(false);
+  const [syncing, setSyncing]         = useState(false);
+  const [preview, setPreview]         = useState(null);
+  const [adError, setAdError]         = useState('');
+
+  useEffect(() => {
+    listAllSavedOUs()
+      .then(setSavedOUs)
+      .catch(() => setSavedOUs([]));
+  }, []);
+
+  const filteredOUs = savedOUs.filter((ou) =>
+    ou.name.toLowerCase().includes(ouSearch.toLowerCase())
+  );
+
+  const handleSelectOU = (ou) => {
+    setSelectedOU(ou);
+    setOuPath(ou.ouPath);
+  };
+
+  const effectivePath = selectedOU ? selectedOU.ouPath : (manualMode ? ouPath : '');
 
   const handleSync = async () => {
-    if (!ouPath.trim()) return;
+    if (!effectivePath.trim()) return;
     setSyncing(true);
     setAdError('');
     setPreview(null);
     try {
-      const result = await syncADBulk(ouPath.trim());
+      const result = await syncADBulk(effectivePath.trim());
       setPreview(result);
       const total = result.imported + result.updated;
       if (total > 0) {
@@ -224,22 +372,91 @@ function OUSyncTab({ onImported }) {
         <p className="font-semibold mb-1">Sincronização em lote por Unidade Organizacional</p>
         <p className="text-blue-700 text-xs">
           Importa ou atualiza <strong>todos os usuários</strong> de uma OU do Active Directory de uma vez.
-          Usuários já existentes têm seus dados atualizados. Útil para onboarding de novos departamentos.
+          Usuários já existentes têm seus dados atualizados.
         </p>
       </div>
 
+      {/* Seletor de OUs salvas */}
+      {savedOUs.length > 0 && (
+        <div>
+          <label className="label">Selecionar OU salva</label>
+          <input
+            className="input mb-2"
+            placeholder="Filtrar OUs por nome..."
+            value={ouSearch}
+            onChange={(e) => setOuSearch(e.target.value)}
+          />
+          <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-100">
+            {filteredOUs.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-gray-400">Nenhuma OU encontrada.</p>
+            ) : (
+              filteredOUs.map((ou) => (
+                <button
+                  key={ou._id}
+                  type="button"
+                  onClick={() => handleSelectOU(ou)}
+                  className={cn(
+                    'w-full text-left px-3 py-2.5 text-sm transition-colors',
+                    selectedOU?._id === ou._id
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'hover:bg-gray-50 text-gray-700'
+                  )}
+                >
+                  <p className="font-medium">{ou.name}</p>
+                  <p className="text-xs text-gray-400 font-mono truncate">{ou.ouPath}</p>
+                  {ou.lastSyncAt && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Última sync: {formatDateTime(ou.lastSyncAt)}
+                      {ou.lastSyncResult?.imported != null && (
+                        <span className="ml-2">· {ou.lastSyncResult.imported} novo(s), {ou.lastSyncResult.updated} atualizado(s)</span>
+                      )}
+                    </p>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DN selecionado (somente leitura) */}
+      {selectedOU && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm">
+          <p className="text-xs text-gray-500 mb-1">DN selecionado (somente leitura):</p>
+          <p className="font-mono text-xs text-gray-700 break-all">{selectedOU.ouPath}</p>
+          <button
+            type="button"
+            onClick={() => { setSelectedOU(null); setOuPath(''); }}
+            className="text-xs text-primary-600 hover:text-primary-800 mt-1"
+          >
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
+      {/* Campo manual (fallback) */}
       <div>
-        <label className="label">Caminho da OU (Distinguished Name)</label>
-        <input
-          className="input font-mono text-sm"
-          placeholder="Ex: OU=SEASC,DC=seasc,DC=sc,DC=gov,DC=br"
-          value={ouPath}
-          onChange={(e) => setOuPath(e.target.value)}
-          autoFocus
-        />
-        <p className="text-xs text-gray-400 mt-1">
-          Informe o DN completo da OU. Todos os usuários da OU e suas sub-OUs serão sincronizados.
-        </p>
+        <button
+          type="button"
+          onClick={() => setManualMode((m) => !m)}
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 mb-2"
+        >
+          {manualMode ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          {manualMode ? 'Ocultar campo manual' : 'Ou digitar DN manualmente'}
+        </button>
+        {manualMode && !selectedOU && (
+          <div>
+            <input
+              className="input font-mono text-sm"
+              placeholder="Ex: OU=Exemplo,DC=empresa,DC=com,DC=br"
+              value={ouPath}
+              onChange={(e) => setOuPath(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Informe o DN completo da OU. Todos os usuários da OU e suas sub-OUs serão sincronizados.
+            </p>
+          </div>
+        )}
       </div>
 
       {adError && (
@@ -249,40 +466,13 @@ function OUSyncTab({ onImported }) {
         </div>
       )}
 
-      {preview && (
-        <div className={cn(
-          'rounded-lg px-4 py-3 text-sm border',
-          preview.errors.length > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
-        )}>
-          <p className={cn('font-semibold mb-2', preview.errors.length > 0 ? 'text-yellow-800' : 'text-green-800')}>
-            Sincronização concluída
-          </p>
-          <ul className="space-y-0.5 text-sm">
-            <li className="text-gray-700">Total de usuários na OU: <strong>{preview.total}</strong></li>
-            <li className="text-green-700">{preview.imported} novo(s) importado(s)</li>
-            <li className="text-blue-700">{preview.updated} atualizado(s)</li>
-            {preview.sectorsCreated > 0 && (
-              <li className="text-blue-600">{preview.sectorsCreated} setor(es) criado(s) automaticamente a partir do AD</li>
-            )}
-            {preview.errors.length > 0 && (
-              <li className="text-red-600 mt-1">
-                {preview.errors.length} erro(s):
-                <ul className="ml-4 mt-1 space-y-0.5">
-                  {preview.errors.map((e) => (
-                    <li key={e.username} className="text-xs">{e.username}: {e.error}</li>
-                  ))}
-                </ul>
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
+      {preview && <SyncResult result={preview} />}
 
       <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
         <button
           type="button"
           onClick={handleSync}
-          disabled={!ouPath.trim() || syncing}
+          disabled={!effectivePath.trim() || syncing}
           className="btn-primary"
         >
           {syncing

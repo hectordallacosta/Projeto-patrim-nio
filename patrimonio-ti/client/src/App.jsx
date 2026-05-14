@@ -13,6 +13,9 @@ import Sectors from '@/pages/admin/Sectors';
 import EquipmentTypes from '@/pages/admin/EquipmentTypes';
 import EquipmentModels from '@/pages/admin/EquipmentModels';
 import AuditLog from '@/pages/admin/AuditLog';
+import SavedOUs from '@/pages/admin/SavedOUs';
+import Stocks from '@/pages/admin/Stocks';
+import StockDetail from '@/pages/admin/StockDetail';
 import MyEquipment from '@/pages/user/MyEquipment';
 import Profile from '@/pages/user/Profile';
 
@@ -37,6 +40,9 @@ export default function App() {
           <Route path="/admin/equipment-types" element={<EquipmentTypes />} />
           <Route path="/admin/equipment-models" element={<EquipmentModels />} />
           <Route path="/admin/audit-log" element={<AuditLog />} />
+          <Route path="/admin/saved-ous" element={<SavedOUs />} />
+          <Route path="/admin/stocks" element={<Stocks />} />
+          <Route path="/admin/stocks/:id" element={<StockDetail />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>

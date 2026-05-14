@@ -5,6 +5,7 @@ const ldapService = require('./ldapService');
 const auditService = require('./auditService');
 const { paginate, paginationMeta } = require('../utils/pagination');
 const { extractSectorAcronym, extractSectorFullName } = require('../utils/ldapUtils');
+const { updateSyncResult } = require('./savedOUService');
 
 /**
  * Dado o distinguishedName do AD, encontra ou cria o setor pela sigla extraída do DN.
@@ -12,17 +13,17 @@ const { extractSectorAcronym, extractSectorFullName } = require('../utils/ldapUt
  */
 async function findOrCreateSectorFromDN(distinguishedName) {
   const acronym = extractSectorAcronym(distinguishedName);
-  if (!acronym) return null;
+  if (!acronym) return { sectorId: null, sectorName: null };
 
   let sector = await Sector.findOne({ name: acronym }, null, { collation: { locale: 'pt', strength: 2 } });
 
   if (!sector) {
     const fullName = extractSectorFullName(distinguishedName);
-    sector = await Sector.create({ name: acronym, description: fullName || acronym, isActive: true });
+    sector = await Sector.create({ name: acronym, description: fullName || acronym, isActive: true, origin: 'ad' });
     console.log(`[userService] Setor criado automaticamente: ${acronym}`);
   }
 
-  return sector._id;
+  return { sectorId: sector._id, sectorName: sector.name };
 }
 
 const POPULATE_SECTOR = { path: 'sector', select: 'name' };
@@ -142,9 +143,7 @@ async function syncFromAD(username, performedBy, ip) {
 
   const before = await User.findOne({ username }).lean();
 
-  // Atribui setor se o usuário não tiver setor definido (novo ou existente sem setor).
-  // Nunca sobrescreve setor já atribuído (importação manual ou anterior).
-  const sectorId = before?.sector ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
+  const { sectorId } = await findOrCreateSectorFromDN(adUser.distinguishedName);
 
   const user = await User.findOneAndUpdate(
     { username: adUser.username },
@@ -179,45 +178,56 @@ async function syncFromAD(username, performedBy, ip) {
 
 /**
  * Importa múltiplos usuários do AD de uma vez.
- * Retorna resumo: imported, updated, errors.
+ * Retorna resumo detalhado com listas de usuários criados/atualizados e setores novos.
  */
 async function importFromAD(usernames, performedBy, ip) {
-  const results = { imported: 0, updated: 0, sectorsCreated: 0, errors: [] };
+  const results = {
+    imported: 0, updated: 0, sectorsCreated: 0, errors: [],
+    importedUsers: [], updatedUsers: [], newSectors: [],
+  };
 
-  const sectorsBeforeCount = await Sector.countDocuments();
+  const syncStart = new Date();
 
   for (const username of usernames) {
     try {
       const before = await User.findOne({ username }).lean();
-      await syncFromAD(username, performedBy, ip);
-      if (before) results.updated++;
-      else results.imported++;
+      const user = await syncFromAD(username, performedBy, ip);
+      if (before) {
+        results.updated++;
+        results.updatedUsers.push({ username: user.username, displayName: user.displayName, sector: user.sector?.name || null });
+      } else {
+        results.imported++;
+        results.importedUsers.push({ username: user.username, displayName: user.displayName, sector: user.sector?.name || null });
+      }
     } catch (err) {
       results.errors.push({ username, error: err.message });
     }
   }
 
-  results.sectorsCreated = (await Sector.countDocuments()) - sectorsBeforeCount;
+  const newSectors = await Sector.find({ createdAt: { $gte: syncStart } }).select('name description').lean();
+  results.newSectors = newSectors.map((s) => ({ name: s.name, description: s.description }));
+  results.sectorsCreated = results.newSectors.length;
   return results;
 }
 
 /**
  * Importa/sincroniza todos os usuários de uma OU do AD.
- * Retorna resumo: total, imported, updated, errors.
+ * Retorna resumo detalhado com listas de usuários criados/atualizados e setores novos.
  */
 async function syncBulkFromAD(ouPath, performedBy, ip) {
   const adUsers = await ldapService.getUsersByOU(ouPath);
-  const results = { total: adUsers.length, imported: 0, updated: 0, sectorsCreated: 0, errors: [] };
+  const results = {
+    total: adUsers.length, imported: 0, updated: 0, sectorsCreated: 0, errors: [],
+    importedUsers: [], updatedUsers: [], newSectors: [],
+  };
 
-  const sectorsBeforeCount = await Sector.countDocuments();
+  const syncStart = new Date();
 
   for (const adUser of adUsers) {
     try {
       const before = await User.findOne({ username: adUser.username }).lean();
 
-      // Atribui setor se o usuário não tiver setor definido (novo ou existente sem setor).
-      // Nunca sobrescreve setor já atribuído.
-      const sectorId = before?.sector ? null : await findOrCreateSectorFromDN(adUser.distinguishedName);
+      const { sectorId, sectorName } = await findOrCreateSectorFromDN(adUser.distinguishedName);
 
       await User.findOneAndUpdate(
         { username: adUser.username },
@@ -237,14 +247,29 @@ async function syncBulkFromAD(ouPath, performedBy, ip) {
         { upsert: true, new: true, runValidators: true }
       );
 
-      if (before) results.updated++;
-      else results.imported++;
+      if (before) {
+        results.updated++;
+        results.updatedUsers.push({ username: adUser.username, displayName: adUser.displayName, sector: sectorName });
+      } else {
+        results.imported++;
+        results.importedUsers.push({ username: adUser.username, displayName: adUser.displayName, sector: sectorName });
+      }
     } catch (err) {
       results.errors.push({ username: adUser.username, error: err.message });
     }
   }
 
-  results.sectorsCreated = (await Sector.countDocuments()) - sectorsBeforeCount;
+  const newSectors = await Sector.find({ createdAt: { $gte: syncStart } }).select('name description').lean();
+  results.newSectors = newSectors.map((s) => ({ name: s.name, description: s.description }));
+  results.sectorsCreated = results.newSectors.length;
+
+  // Atualiza lastSyncAt e lastSyncResult na SavedOU correspondente (se existir)
+  try {
+    await updateSyncResult(ouPath, results);
+  } catch (_) {
+    // Não bloqueia a operação se a OU não estiver cadastrada
+  }
+
   return results;
 }
 

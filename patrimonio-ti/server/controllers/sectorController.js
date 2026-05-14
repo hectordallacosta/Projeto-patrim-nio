@@ -34,9 +34,10 @@ const create = async (req, res, next) => {
     if (!parsed.success) {
       return error(res, 'Dados inválidos', 422, 'VALIDATION_ERROR', parsed.error.flatten());
     }
-    const data = await sectorService.create(parsed.data, req.user.id, req.ip);
+    const data = await sectorService.create({ ...parsed.data, origin: 'manual' }, req.user.id, req.ip);
     return success(res, data, 201);
   } catch (err) {
+    if (err.code === 'SECTOR_DUPLICATE') return error(res, err.message, 409, err.code);
     next(err);
   }
 };
@@ -51,6 +52,7 @@ const update = async (req, res, next) => {
     return success(res, data);
   } catch (err) {
     if (err.statusCode === 404) return error(res, err.message, 404, 'NOT_FOUND');
+    if (err.code === 'SECTOR_AD_MANAGED') return error(res, err.message, 403, err.code);
     next(err);
   }
 };

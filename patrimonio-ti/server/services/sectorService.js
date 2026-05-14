@@ -58,6 +58,13 @@ async function getById(id) {
 }
 
 async function create(data, userId, ip) {
+  const exists = await Sector.findOne({ name: data.name }, null, { collation: { locale: 'pt', strength: 2 } });
+  if (exists) {
+    const err = new Error('Já existe um setor com este nome.');
+    err.statusCode = 409;
+    err.code = 'SECTOR_DUPLICATE';
+    throw err;
+  }
   const sector = await Sector.create(data);
   await auditService.log({
     action: 'CREATE',
@@ -75,6 +82,13 @@ async function update(id, data, userId, ip) {
   if (!before) {
     const err = new Error('Setor não encontrado');
     err.statusCode = 404;
+    throw err;
+  }
+
+  if (before.origin === 'ad') {
+    const err = new Error('Setores criados pelo Active Directory não podem ser editados manualmente.');
+    err.statusCode = 403;
+    err.code = 'SECTOR_AD_MANAGED';
     throw err;
   }
 

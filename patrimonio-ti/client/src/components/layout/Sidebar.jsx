@@ -1,16 +1,18 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Monitor, Users, Building2, Cpu, ScrollText, X, Package,
+  LayoutDashboard, Monitor, Users, Building2, Cpu, ScrollText, X, Package, Warehouse, Network,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const adminLinks = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/equipment', icon: Monitor, label: 'Equipamentos' },
+  { to: '/admin/equipment', icon: Monitor, label: 'Ativos em Uso' },
   { to: '/admin/equipment-models', icon: Package, label: 'Modelos' },
+  { to: '/admin/stocks', icon: Warehouse, label: 'Estoques' },
   { to: '/admin/users', icon: Users, label: 'Usuários' },
   { to: '/admin/sectors', icon: Building2, label: 'Setores' },
+  { to: '/admin/saved-ous', icon: Network, label: 'OUs Salvas' },
   { to: '/admin/equipment-types', icon: Cpu, label: 'Tipos de Equipamento' },
   { to: '/admin/audit-log', icon: ScrollText, label: 'Audit Log' },
 ];

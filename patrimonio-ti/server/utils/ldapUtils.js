@@ -3,10 +3,11 @@
  *
  * Regra: percorre os segmentos OU= do DN (do mais específico ao mais geral)
  * e retorna a sigla após o último " - " da primeira OU que contiver esse padrão.
+ * Suporta caracteres acentuados portugueses (flag /u + \p{L}).
  *
- * Exemplo:
- *   DN: "CN=joao,OU=Gerência de Tecnologia da Informação - GETIC,OU=Diretoria,...,DC=seasc,..."
- *   Retorna: "GETIC"
+ * Exemplos:
+ *   "CN=joao,OU=Gerência de TI - GETIC,..."        → "GETIC"
+ *   "CN=maria,OU=Urss - Joaçaba,..."               → "JOAÇABA"
  *
  * Retorna null se nenhuma OU tiver o padrão " - SIGLA".
  */
@@ -20,7 +21,7 @@ function extractSectorAcronym(distinguishedName) {
     .map((s) => s.substring(3));
 
   for (const ou of ouSegments) {
-    const match = ou.match(/\s-\s([A-Za-z0-9]+)\s*$/);
+    const match = ou.match(/\s-\s([\p{L}0-9]+(?:\s[\p{L}0-9]+)*)\s*$/u);
     if (match) return match[1].trim().toUpperCase();
   }
 
@@ -29,6 +30,7 @@ function extractSectorAcronym(distinguishedName) {
 
 /**
  * Extrai o nome completo do setor (antes do hífen) para usar como description.
+ * Suporta caracteres acentuados portugueses (flag /u + \p{L}).
  *
  * Exemplo:
  *   "Gerência de Tecnologia da Informação do Centro Administrativo - GETIC"
@@ -44,7 +46,7 @@ function extractSectorFullName(distinguishedName) {
     .map((s) => s.substring(3));
 
   for (const ou of ouSegments) {
-    const match = ou.match(/^(.+?)\s-\s[A-Za-z0-9]+\s*$/);
+    const match = ou.match(/^(.+?)\s-\s[\p{L}0-9]+(?:\s[\p{L}0-9]+)*\s*$/u);
     if (match) return match[1].trim();
   }
 

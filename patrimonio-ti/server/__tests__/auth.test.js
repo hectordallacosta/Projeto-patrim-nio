@@ -6,7 +6,7 @@ const User = require('../models/User');
 
 jest.mock('../services/ldapService');
 
-const MONGO_URI = 'mongodb://localhost:27017/patrimonio_ti_test';
+const MONGO_URI = 'mongodb://localhost:27018/patrimonio_ti_test';
 
 beforeAll(async () => {
   await mongoose.connect(MONGO_URI);

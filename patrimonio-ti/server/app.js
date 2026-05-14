@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
@@ -8,6 +9,8 @@ const equipmentModelRoutes = require('./routes/equipmentModel.routes');
 const equipmentRoutes = require('./routes/equipment.routes');
 const userRoutes = require('./routes/user.routes');
 const auditLogRoutes = require('./routes/auditLog.routes');
+const savedOURoutes = require('./routes/savedOU.routes');
+const stockRoutes = require('./routes/stock.routes');
 
 const app = express();
 
@@ -22,6 +25,8 @@ app.use('/api/equipment-models', equipmentModelRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/saved-ous', savedOURoutes);
+app.use('/api/stocks', stockRoutes);
 
 app.use(errorHandler);
 
