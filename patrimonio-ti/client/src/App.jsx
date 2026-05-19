@@ -16,6 +16,7 @@ import AuditLog from '@/pages/admin/AuditLog';
 import SavedOUs from '@/pages/admin/SavedOUs';
 import Stocks from '@/pages/admin/Stocks';
 import StockDetail from '@/pages/admin/StockDetail';
+import SectorDetail from '@/pages/admin/SectorDetail';
 import MyEquipment from '@/pages/user/MyEquipment';
 import Profile from '@/pages/user/Profile';
 
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/admin/equipment" element={<Equipment />} />
           <Route path="/admin/users" element={<Users />} />
           <Route path="/admin/sectors" element={<Sectors />} />
+          <Route path="/admin/sectors/:id" element={<SectorDetail />} />
           <Route path="/admin/equipment-types" element={<EquipmentTypes />} />
           <Route path="/admin/equipment-models" element={<EquipmentModels />} />
           <Route path="/admin/audit-log" element={<AuditLog />} />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { Trash2, Loader2, Filter, X, Users, Monitor, Plus, Pencil } from 'lucide-react';
 import PageTitle from '@/components/shared/PageTitle';
 import Modal from '@/components/shared/Modal';
@@ -260,7 +260,11 @@ export default function Sectors() {
             <tbody className="divide-y divide-gray-100">
               {data.map((item) => (
                 <tr key={item._id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{item.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <Link to={`/admin/sectors/${item._id}`} className="text-blue-600 hover:underline">
+                      {item.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell">{item.description || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 hidden lg:table-cell">{item.manager?.displayName || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 hidden xl:table-cell">

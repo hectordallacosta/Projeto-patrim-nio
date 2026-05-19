@@ -28,9 +28,30 @@ async function list(query) {
       { $match: { sector: { $in: ids } } },
       { $group: { _id: '$sector', count: { $sum: 1 } } },
     ]),
+    // Conta equipamentos fora de estoque: diretos do setor + atribuídos a usuários do setor
     Equipment.aggregate([
-      { $match: { assignedSector: { $in: ids } } },
-      { $group: { _id: '$assignedSector', count: { $sum: 1 } } },
+      { $match: { status: { $ne: 'in_stock' } } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignedTo',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      {
+        $addFields: {
+          effectiveSector: {
+            $cond: {
+              if: { $ne: ['$assignedSector', null] },
+              then: '$assignedSector',
+              else: { $arrayElemAt: ['$user.sector', 0] },
+            },
+          },
+        },
+      },
+      { $match: { effectiveSector: { $in: ids } } },
+      { $group: { _id: '$effectiveSector', count: { $sum: 1 } } },
     ]),
   ]);
 
@@ -48,13 +69,30 @@ async function list(query) {
 
 async function getById(id) {
   const sector = await Sector.findById(id)
-    .populate('manager', 'displayName username email');
+    .populate('manager', '_id displayName username');
   if (!sector) {
     const err = new Error('Setor não encontrado');
     err.statusCode = 404;
+    err.code = 'SECTOR_NOT_FOUND';
     throw err;
   }
-  return sector;
+
+  const sectorId = sector._id;
+  const usersInSector = await User.find({ sector: sectorId }).select('_id').lean();
+  const userIds = usersInSector.map((u) => u._id);
+
+  const [userCount, equipmentCount] = await Promise.all([
+    User.countDocuments({ sector: sectorId }),
+    Equipment.countDocuments({
+      status: { $ne: 'in_stock' },
+      $or: [
+        { assignedSector: sectorId },
+        { assignedTo: { $in: userIds } },
+      ],
+    }),
+  ]);
+
+  return { sector, userCount, equipmentCount };
 }
 
 async function create(data, userId, ip) {

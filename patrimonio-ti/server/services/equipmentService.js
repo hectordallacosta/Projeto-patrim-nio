@@ -469,6 +469,67 @@ async function remove(id, userId, ip) {
   });
 }
 
+async function listBySector(sectorId, query = {}) {
+  const { page, limit, skip } = paginate(query);
+
+  const usersInSector = await User.find({ sector: sectorId }).select('_id').lean();
+  const userIds = usersInSector.map((u) => u._id);
+
+  const sectorCondition = {
+    status: { $ne: 'in_stock' },
+    $or: [
+      { assignedSector: sectorId },
+      { assignedTo: { $in: userIds } },
+    ],
+  };
+
+  let filter = sectorCondition;
+
+  if (query.search) {
+    const matchingModels = await EquipmentModel.find({
+      $or: [
+        { brand: { $regex: query.search, $options: 'i' } },
+        { model: { $regex: query.search, $options: 'i' } },
+      ],
+    }).select('_id').lean();
+    const modelIds = matchingModels.map((m) => m._id);
+
+    filter = {
+      $and: [
+        sectorCondition,
+        {
+          $or: [
+            { patrimonyNumber: { $regex: query.search, $options: 'i' } },
+            { serialNumber: { $regex: query.search, $options: 'i' } },
+            { equipmentModel: { $in: modelIds } },
+          ],
+        },
+      ],
+    };
+  }
+
+  const SORTABLE = ['patrimonyNumber', 'serialNumber', 'status'];
+  const sortField = SORTABLE.includes(query.sort) ? query.sort : 'patrimonyNumber';
+  const sortDir = query.sortDir === 'desc' ? -1 : 1;
+
+  const POPULATE = [
+    {
+      path: 'equipmentModel',
+      select: 'brand model type',
+      populate: { path: 'type', select: 'name' },
+    },
+    { path: 'assignedTo', select: 'displayName username' },
+    { path: 'assignedSector', select: '_id name' },
+  ];
+
+  const [data, total] = await Promise.all([
+    Equipment.find(filter).populate(POPULATE).sort({ [sortField]: sortDir }).skip(skip).limit(limit),
+    Equipment.countDocuments(filter),
+  ]);
+
+  return { data, pagination: paginationMeta(total, page, limit) };
+}
+
 async function getInStockCount() {
   return Equipment.countDocuments({ status: 'in_stock' });
 }
@@ -552,4 +613,4 @@ async function getRecentAssignments() {
     .lean();
 }
 
-module.exports = { list, getById, create, update, assign, unassign, sendToStock, updateStatus, retrieve, remove, getAssetsBySector, getAssetsByType, getModelsBySector, getRecentAssignments, getInStockCount };
+module.exports = { list, getById, create, update, assign, unassign, sendToStock, updateStatus, retrieve, remove, getAssetsBySector, getAssetsByType, getModelsBySector, getRecentAssignments, getInStockCount, listBySector };

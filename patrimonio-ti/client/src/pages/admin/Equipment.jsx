@@ -17,7 +17,7 @@ import {
   assignEquipment, unassignEquipment, sendEquipmentToStock, changeEquipmentStatus, deleteEquipment,
 } from '@/services/equipmentService';
 import { listEquipmentTypes } from '@/services/equipmentTypeService';
-import { listUsers } from '@/services/userService';
+import { listUsers, getUser } from '@/services/userService';
 import { listSectors } from '@/services/sectorService';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDate, statusLabel, statusColor } from '@/utils/formatters';
@@ -76,6 +76,83 @@ function Autocomplete({ items, value, onChange, getLabel, placeholder }) {
               {getLabel(item)}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- UserFilterInput ----------
+function UserFilterInput({ selectedId, selectedName, onSelect, onClear }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const debouncedQuery = useDebounce(query, 300);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!debouncedQuery) { setResults([]); setHasSearched(false); return; }
+    setSearching(true); setHasSearched(true);
+    listUsers({ search: debouncedQuery, limit: 20 })
+      .then((r) => setResults(r.data || []))
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false));
+  }, [debouncedQuery]);
+
+  if (selectedId) {
+    return (
+      <div className="input w-auto flex items-center gap-1.5 text-sm text-gray-700 cursor-default">
+        <span className="truncate max-w-36">{selectedName || selectedId}</span>
+        <button
+          type="button"
+          onClick={() => { onClear(); setQuery(''); }}
+          className="text-gray-400 hover:text-gray-600 shrink-0"
+          title="Remover filtro de usuário"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        className="input"
+        placeholder="Filtrar por usuário..."
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {searching ? (
+            <div className="flex justify-center py-3"><Loader2 size={15} className="animate-spin text-gray-400" /></div>
+          ) : !hasSearched ? (
+            <p className="px-3 py-2 text-sm text-gray-400">Digite para buscar usuário...</p>
+          ) : results.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-gray-400">Nenhum usuário encontrado.</p>
+          ) : (
+            results.map((u) => (
+              <button
+                key={u._id}
+                type="button"
+                onClick={() => { onSelect(u._id, `${u.displayName} (${u.username})`); setQuery(''); setOpen(false); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 hover:text-primary-700"
+              >
+                <span className="font-medium">{u.displayName}</span>
+                <span className="text-xs text-gray-400 ml-1">({u.username})</span>
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -261,27 +338,37 @@ export default function Equipment() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const search   = searchParams.get('search') || '';
-  const status   = searchParams.get('status') || '';
-  const typeId   = searchParams.get('type') || '';
-  const sectorId = searchParams.get('sector') || '';
-  const sort     = searchParams.get('sort') || 'createdAt';
-  const sortDir  = searchParams.get('sortDir') || 'desc';
-  const page     = parseInt(searchParams.get('page') || '1');
-  const limit    = parseInt(searchParams.get('limit') || '20');
+  const search        = searchParams.get('search') || '';
+  const status        = searchParams.get('status') || '';
+  const typeId        = searchParams.get('type') || '';
+  const sectorId      = searchParams.get('sector') || '';
+  const assignedToId  = searchParams.get('assignedTo') || '';
+  const sort          = searchParams.get('sort') || 'createdAt';
+  const sortDir       = searchParams.get('sortDir') || 'desc';
+  const page          = parseInt(searchParams.get('page') || '1');
+  const limit         = parseInt(searchParams.get('limit') || '20');
 
   const [searchInput, setSearchInput] = useState(search);
   const debouncedSearch = useDebounce(searchInput, 300);
 
-  const [data, setData]         = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [stats, setStats]       = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [types, setTypes]       = useState([]);
-  const [sectors, setSectors]   = useState([]);
-  const [modal, setModal]       = useState(null); // modes: assign, unassign, sendToStock
-  const [confirm, setConfirm]   = useState(null);
-  const [saving, setSaving]     = useState(false);
+  const [data, setData]                 = useState([]);
+  const [pagination, setPagination]     = useState(null);
+  const [stats, setStats]               = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [types, setTypes]               = useState([]);
+  const [sectors, setSectors]           = useState([]);
+  const [assignedToName, setAssignedToName] = useState('');
+  const [modal, setModal]               = useState(null);
+  const [confirm, setConfirm]           = useState(null);
+  const [saving, setSaving]             = useState(false);
+
+  // Resolve o nome do usuário quando a página carrega com assignedTo já na URL
+  useEffect(() => {
+    if (!assignedToId) { setAssignedToName(''); return; }
+    getUser(assignedToId)
+      .then((u) => setAssignedToName(`${u.displayName} (${u.username})`))
+      .catch(() => setAssignedToName(assignedToId));
+  }, [assignedToId]);
 
   useEffect(() => {
     setSearchParams((prev) => {
@@ -320,8 +407,11 @@ export default function Equipment() {
     }, { replace: true });
   };
 
-  const clearFilters = () => setSearchParams({}, { replace: true });
-  const activeCount = [search, status, typeId, sectorId].filter(Boolean).length;
+  const clearFilters = () => {
+    setAssignedToName('');
+    setSearchParams({}, { replace: true });
+  };
+  const activeCount = [search, status, typeId, sectorId, assignedToId].filter(Boolean).length;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -332,12 +422,13 @@ export default function Equipment() {
         status: status || undefined,
         type: typeId || undefined,
         assignedSector: sectorId || undefined,
+        assignedTo: assignedToId || undefined,
         sort, sortDir,
       });
       setData(res.data);
       setPagination(res.pagination);
     } finally { setLoading(false); }
-  }, [page, limit, search, status, typeId, sectorId, sort, sortDir]);
+  }, [page, limit, search, status, typeId, sectorId, assignedToId, sort, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -505,6 +596,12 @@ export default function Equipment() {
           <option value="">Todos os setores</option>
           {sectors.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
         </select>
+        <UserFilterInput
+          selectedId={assignedToId}
+          selectedName={assignedToName}
+          onSelect={(id, name) => { setAssignedToName(name); setParam('assignedTo', id); }}
+          onClear={() => { setAssignedToName(''); setParam('assignedTo', ''); }}
+        />
         {activeCount > 0 && (
           <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-2 transition-colors">
             <Filter size={14} />
